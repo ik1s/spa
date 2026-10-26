@@ -1,0 +1,53 @@
+# Описание двух контейнеров: хранилище метрик (VictoriaMetrics) и графики (Grafana).
+# Запускается командой "docker compose up -d" из каталога /opt/spa.
+services:
+  victoriametrics:
+    # Тег latest всегда тянет свежую версию. Это удобно, но неповторяемо:
+    # для продакшена лучше закрепить конкретную версию.
+    image: victoriametrics/victoria-metrics:latest
+    container_name: victoriametrics
+    # Перезапускать контейнер после сбоя и после перезагрузки хоста,
+    # кроме случая, когда его остановили вручную.
+    restart: unless-stopped
+    # "порт_хоста:порт_контейнера": публикует порт контейнера наружу.
+    ports:
+      - "8428:8428"
+    # Приложение spa работает на хосте, а не в контейнере. Внутри контейнера
+    # "localhost" означает сам контейнер, поэтому до хоста нужно добираться по
+    # специальному имени host.docker.internal. На Linux оно не существует само
+    # по себе, и host-gateway говорит Docker подставить адрес хоста.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Данные лежат на хосте и переживают пересоздание контейнера.
+      - ./data/victoria-metrics:/victoria-metrics-data
+      # :ro (read-only): контейнер может читать файл, но не менять.
+      - ./scrape.yml:/etc/victoriametrics/scrape.yml:ro
+    command:
+      - "--storageDataPath=/victoria-metrics-data"
+      - "--httpListenAddr=:8428"
+      # Файл со списком того, что VictoriaMetrics должна опрашивать (см. scrape.yml).
+      - "--promscrape.config=/etc/victoriametrics/scrape.yml"
+      - "--promscrape.config.strictParse=false"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    # Порядок запуска: сначала victoriametrics, потом grafana. Это только порядок
+    # старта, а не ожидание, пока VictoriaMetrics будет готова принимать запросы.
+    depends_on:
+      - victoriametrics
+    ports:
+      - "3000:3000"
+    # Пароль администратора лежит в файле .env (его создаёт Ansible из шаблона),
+    # в самом compose-файле пароля нет.
+    env_file:
+      - .env
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      # Источник данных и дашборды создаются автоматически из этих каталогов.
+      - ./provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro

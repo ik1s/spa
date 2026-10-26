@@ -1,0 +1,10 @@
+---
+# Обработчик (handler) срабатывает, только если какая-то задача сделала notify
+# с этим именем. Даже если уведомлений было много, сервис перезапустится один
+# раз в конце плейбука. Обработчики общие для всех ролей плейбука, поэтому
+# роль monitoring_stack тоже может вызвать этот.
+- name: restart spa-monitoring
+  ansible.builtin.systemd:
+    name: spa-monitoring.service
+    daemon_reload: true
+    state: restarted

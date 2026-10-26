@@ -1,0 +1,57 @@
+---
+# Код приложения лежит в каталоге app/ в корне репозитория и намеренно не
+# дублируется внутри роли: playbook_dir указывает на ansible/, поэтому
+# "../app/" ведёт в корневой app/. Завершающий "/" значит "копировать
+# содержимое каталога", а не сам каталог.
+- name: Deploy spa exporter source
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../app/"
+    dest: /opt/spa/app/
+    owner: spa
+    group: spa
+    mode: "0644"
+    directory_mode: "0755"
+  notify: restart spa-monitoring
+
+# venv это изолированное окружение Python для зависимостей приложения.
+# --system-site-packages нужен, чтобы оно видело системный пакет
+# python3-rpi-lgpio (модуль RPi.GPIO для Raspberry Pi 5): через pip он не ставится.
+# Модуль command сам по себе не идемпотентен, поэтому creates: пропускает
+# команду, если файл уже существует (окружение создано).
+# become_user: spa выполняет задачу от имени пользователя spa, а не root.
+- name: Create Python venv with system site packages (for RPi.GPIO shim)
+  ansible.builtin.command:
+    cmd: python3 -m venv --system-site-packages /opt/spa/app/venv
+    creates: /opt/spa/app/venv/bin/python3
+  become: true
+  become_user: spa
+
+# Ставит prometheus_client и pyyaml из requirements.txt в наше окружение.
+# Системный Python трогать нельзя (PEP 668), поэтому нужен venv.
+- name: Install Python dependencies into venv
+  ansible.builtin.pip:
+    requirements: /opt/spa/app/requirements.txt
+    virtualenv: /opt/spa/app/venv
+    virtualenv_command: "/usr/bin/python3 -m venv --system-site-packages"
+  become: true
+  become_user: spa
+  notify: restart spa-monitoring
+
+- name: Deploy spa-monitoring systemd unit
+  ansible.builtin.copy:
+    src: spa-monitoring.service
+    dest: /etc/systemd/system/spa-monitoring.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart spa-monitoring
+
+# daemon_reload: systemd перечитывает юниты. enabled: запускать при загрузке.
+# state: started: запустить, если ещё не запущен (на чистой системе ни один
+# notify мог не сработать, а сервис всё равно должен подняться).
+- name: Ensure spa-monitoring is enabled and started
+  ansible.builtin.systemd:
+    name: spa-monitoring.service
+    daemon_reload: true
+    enabled: true
+    state: started

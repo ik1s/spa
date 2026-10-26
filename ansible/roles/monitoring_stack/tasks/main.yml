@@ -1,0 +1,94 @@
+---
+# Роль раскладывает по хосту файлы стека Grafana + VictoriaMetrics.
+# Сами контейнеры запускает systemd-юнит из роли spa_app.
+#
+# notify: restart spa-monitoring говорит: если файл изменился, перезапусти сервис.
+# Это обработчик (handler) из roles/spa_app/handlers/main.yml. Обработчики общие
+# на весь плейбук, выполняются один раз в самом конце и только если что-то
+# действительно изменилось.
+
+# loop перебирает список: задача выполняется для каждого пути (item).
+- name: Create /opt/spa directory structure (owned by spa)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: spa
+    group: spa
+    mode: "0755"
+  loop:
+    - /opt/spa
+    - /opt/spa/data
+    - /opt/spa/data/victoria-metrics
+    - /opt/spa/provisioning/datasources
+    - /opt/spa/provisioning/dashboards
+
+# Внутри контейнера Grafana работает от пользователя с номером 472. Каталог с
+# данными на хосте должен принадлежать ему, иначе Grafana не сможет писать в
+# свою базу (ошибка permission denied).
+- name: Create Grafana data directory (owned by container uid/gid 472)
+  ansible.builtin.file:
+    path: /opt/spa/data/grafana
+    state: directory
+    owner: "472"
+    group: "472"
+    mode: "0755"
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: /opt/spa/docker-compose.yml
+    owner: spa
+    group: spa
+    mode: "0644"
+  notify: restart spa-monitoring
+
+- name: Deploy VictoriaMetrics scrape config
+  ansible.builtin.copy:
+    src: scrape.yml
+    dest: /opt/spa/scrape.yml
+    owner: spa
+    group: spa
+    mode: "0644"
+  notify: restart spa-monitoring
+
+- name: Deploy Grafana datasource provisioning
+  ansible.builtin.copy:
+    src: provisioning/datasources/victoriametrics.yml
+    dest: /opt/spa/provisioning/datasources/victoriametrics.yml
+    owner: spa
+    group: spa
+    mode: "0644"
+  notify: restart spa-monitoring
+
+# У двух задач ниже нет notify: Grafana сама перечитывает каталог с дашбордами
+# каждые 30 секунд (updateIntervalSeconds), перезапуск не нужен.
+- name: Deploy Grafana dashboard provisioning config
+  ansible.builtin.copy:
+    src: provisioning/dashboards/dashboards.yml
+    dest: /opt/spa/provisioning/dashboards/dashboards.yml
+    owner: spa
+    group: spa
+    mode: "0644"
+
+- name: Deploy spa sensors dashboard JSON
+  ansible.builtin.copy:
+    src: provisioning/dashboards/spa-sensors.json
+    dest: /opt/spa/provisioning/dashboards/spa-sensors.json
+    owner: spa
+    group: spa
+    mode: "0644"
+
+# template подставляет значения в шаблон env.j2 (язык шаблонов Jinja2).
+# Пароль берётся из переменной окружения GF_ADMIN_PASS на вашем компьютере.
+# mode "0600": читать файл может только владелец, он содержит пароль.
+# no_log: true запрещает Ansible печатать эту задачу в выводе, чтобы пароль
+# не попал в консоль и логи, даже с ключами -v и --diff.
+- name: Deploy .env with Grafana admin password
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/spa/.env
+    owner: spa
+    group: spa
+    mode: "0600"
+  no_log: true
+  notify: restart spa-monitoring

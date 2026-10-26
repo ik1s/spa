@@ -1,0 +1,14 @@
+---
+# Плейбук это сценарий: на каких хостах и какие роли выполнить.
+# Роль это папка в roles/ с задачами (tasks), файлами (files) и шаблонами (templates).
+- name: Deploy spa monitoring stack
+  hosts: spa
+  # become: true значит "выполнять через sudo", для установки пакетов нужен root.
+  become: true
+  # Порядок ролей важен: сначала Docker, потом стек, который в нём работает,
+  # и в конце приложение. Теги позволяют запустить одну роль:
+  #   ansible-playbook playbook.yml --tags app
+  roles:
+    - { role: docker, tags: [docker] }
+    - { role: monitoring_stack, tags: [monitoring] }
+    - { role: spa_app, tags: [app] }

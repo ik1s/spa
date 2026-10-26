@@ -1,0 +1,30 @@
+# Юнит systemd: запускает весь стек одной командой "systemctl start spa-monitoring".
+[Unit]
+Description=SPA monitoring stack (Grafana + VictoriaMetrics + sensors exporter)
+# Requires: без Docker этот сервис не нужен. After: стартовать после Docker и сети.
+# Wants=network-online.target просит дождаться, пока сеть реально заработает.
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+# simple: главный процесс сервиса это сам ExecStart (наше приложение на Python).
+Type=simple
+# Каталог, из которого запускаются команды: тут лежит docker-compose.yml.
+WorkingDirectory=/opt/spa
+# Перед приложением поднимаем контейнеры (-d: в фоне).
+ExecStartPre=/usr/bin/docker compose up -d
+ExecStart=/opt/spa/app/venv/bin/python3 /opt/spa/app/main.py
+# ExecStopPost выполняется после того, как приложение уже остановилось,
+# поэтому контейнеры гасятся последними.
+ExecStopPost=/usr/bin/docker compose down
+# При падении приложения перезапустить его через 5 секунд.
+Restart=on-failure
+RestartSec=5
+# Без ограничения времени на старт: при первом запуске Docker скачивает образы,
+# и это может занять много минут.
+TimeoutStartSec=0
+
+[Install]
+# Запускать при обычной загрузке системы.
+WantedBy=multi-user.target

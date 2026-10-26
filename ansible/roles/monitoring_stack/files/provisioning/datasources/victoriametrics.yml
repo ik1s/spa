@@ -1,0 +1,18 @@
+# Provisioning: Grafana создаёт этот источник данных сама при старте,
+# вручную в интерфейсе ничего настраивать не нужно.
+apiVersion: 1
+
+datasources:
+  - name: VictoriaMetrics
+    # Фиксированный uid нужен, потому что на него ссылается JSON дашборда
+    # (spa-sensors.json). Если поменять uid здесь, дашборд потеряет данные.
+    uid: P4169E866C3094E38
+    # VictoriaMetrics понимает язык запросов Prometheus, поэтому тип prometheus.
+    type: prometheus
+    # proxy: запросы к VictoriaMetrics идут через сервер Grafana, а не напрямую
+    # из браузера (браузер не видит имя контейнера victoriametrics).
+    access: proxy
+    # Имя контейнера, Docker Compose сам настраивает DNS между сервисами.
+    url: http://victoriametrics:8428
+    isDefault: true
+    editable: true

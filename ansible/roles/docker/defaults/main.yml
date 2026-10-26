@@ -1,0 +1,5 @@
+---
+# Версия Docker Compose, которая ставится с GitHub Releases.
+# Чтобы обновить Compose, достаточно поменять эту строку и прогнать роль:
+#   ansible-playbook -i inventory.ini playbook.yml --tags docker
+compose_version: v5.6.1

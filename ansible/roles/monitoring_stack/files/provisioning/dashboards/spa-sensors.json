@@ -1,0 +1,375 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+          "expr": "spa_temperature_celsius",
+          "legendFormat": "{{sensor}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Температура",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+          "unit": "humidity"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+          "expr": "spa_humidity_percent",
+          "legendFormat": "{{sensor}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Влажность",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "ВЫКЛ", "color": "red", "index": 0 },
+                "1": { "text": "ВКЛ", "color": "green", "index": 1 }
+              }
+            }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+          "expr": "spa_collection_enabled",
+          "legendFormat": "collection",
+          "refId": "A"
+        }
+      ],
+      "title": "Сбор данных включён",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "НЕ В СЕТИ", "color": "red", "index": 0 },
+                "1": { "text": "В СЕТИ", "color": "green", "index": 1 }
+              }
+            }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "id": 4,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+          "expr": "spa_sensor_up",
+          "legendFormat": "{{sensor}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Датчик в сети",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "mappings": [],
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "id": 5,
+      "options": {
+        "legend": { "calcs": ["min", "max", "mean", "lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+          "expr": "spa_temperature_celsius",
+          "legendFormat": "{{sensor}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Температура во времени",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "mappings": [],
+          "unit": "humidity"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "id": 6,
+      "options": {
+        "legend": { "calcs": ["min", "max", "mean", "lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+          "expr": "spa_humidity_percent",
+          "legendFormat": "{{sensor}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Влажность во времени",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 12 },
+      "id": 10,
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": { "text": "НЕ В СЕТИ", "color": "red", "index": 0 },
+                    "1": { "text": "В СЕТИ", "color": "green", "index": 1 }
+                  }
+                }
+              ],
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 6, "w": 12, "x": 0, "y": 13 },
+          "id": 7,
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+            "mergeValues": true,
+            "rowHeight": 0.9,
+            "showValue": "auto",
+            "tooltip": { "mode": "single", "sort": "none" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+              "expr": "spa_sensor_up",
+              "legendFormat": "{{sensor}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Статус датчика во времени",
+          "type": "state-timeline"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "mappings": [],
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 5 }] },
+              "unit": "none"
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 6, "w": 6, "x": 12, "y": 13 },
+          "id": 8,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "pluginVersion": "11.0.0",
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+              "expr": "spa_sensor_read_errors_total",
+              "legendFormat": "{{sensor}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Ошибки чтения (всего)",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "mappings": [],
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 15 }, { "color": "red", "value": 30 }] },
+              "unit": "s"
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 6, "w": 6, "x": 18, "y": 13 },
+          "id": 9,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "pluginVersion": "11.0.0",
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+              "expr": "time() - spa_sensor_last_read_timestamp_seconds",
+              "legendFormat": "{{sensor}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Время с последнего чтения",
+          "type": "stat"
+        }
+      ],
+      "title": "Диагностика",
+      "type": "row"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["spa"],
+  "templating": {
+    "list": []
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "SPA — Датчики",
+  "uid": "spa-sensors",
+  "version": 3,
+  "weekStart": ""
+}

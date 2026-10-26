@@ -1,0 +1,22 @@
+# Настройки приложения. Недостающие значения подставляет config.py.
+
+server:
+  host: 0.0.0.0   # слушать на всех интерфейсах (нужно, чтобы контейнер мог достучаться до хоста)
+  port: 7777      # порт для /metrics, /health и /reports
+
+polling:
+  interval_seconds: 5          # как часто опрашивать датчики, в секундах
+  metrics_update_seconds: 5    # пока не используется
+
+collection:
+  # true: опрос идёт всегда. Когда появится кнопка запуска замеров,
+  # опрос будет включаться и выключаться ею.
+  always_on: true
+
+sensors:
+  - name: dht11_1   # имя датчика, попадает в метку sensor="..." у метрик
+    type: dht11     # тип датчика, см. SENSOR_TYPES в sensors/__init__.py
+    pin: 4          # номер GPIO по нумерации BCM (GPIO4)
+
+logging:
+  level: INFO       # DEBUG, INFO, WARNING или ERROR

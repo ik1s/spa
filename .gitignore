@@ -1,0 +1,21 @@
+# Личные заметки и инструкции для ассистента, в репозиторий не попадают
+CLAUDE.md
+
+# Артефакты Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Файлы с секретами (на хосте .env создаётся Ansible из шаблона env.j2)
+.env
+*.env
+!*.env.j2
+.vault-pass*
+
+# Прочее
+*.retry
+*.log
+.ansible/
+.idea/
+.vscode/

@@ -1,0 +1,80 @@
+---
+# Задачи в Ansible идемпотентны: "state: present" значит "пакет должен быть
+# установлен". Если он уже есть, Ansible ничего не делает, поэтому плейбук
+# можно запускать сколько угодно раз.
+
+# upgrade: full обновляет все пакеты системы, включая те, что ставят и удаляют
+# зависимости. Это тяжёлая операция, поэтому она есть только в этой роли.
+- name: Update apt cache and full-upgrade system packages
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: full
+
+- name: Install docker engine from Debian repos
+  ansible.builtin.apt:
+    name: docker.io
+    state: present
+
+# Compose из Debian (2.26.1) устарел, поэтому ставим свежий релиз с GitHub.
+# Debian-пакет убираем, иначе apt будет возвращать старый плагин на место.
+- name: Remove outdated docker-compose Debian package
+  ansible.builtin.apt:
+    name: docker-compose
+    state: absent
+
+# Docker ищет плагины в /usr/local/lib/docker/cli-plugins раньше, чем в
+# /usr/libexec/docker/cli-plugins, поэтому команда "docker compose" (и юнит
+# systemd, который её вызывает) подхватит эту версию без каких-либо правок.
+- name: Create docker CLI plugins directory
+  ansible.builtin.file:
+    path: /usr/local/lib/docker/cli-plugins
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# Контрольную сумму Ansible сверяет сам по checksums.txt из того же релиза.
+# ansible_architecture на Raspberry Pi 5 равен aarch64, это совпадает с
+# именем файла в релизе.
+- name: Install docker compose {{ compose_version }} from GitHub Releases
+  ansible.builtin.get_url:
+    url: "https://github.com/docker/compose/releases/download/{{ compose_version }}/docker-compose-linux-{{ ansible_architecture }}"
+    dest: /usr/local/lib/docker/cli-plugins/docker-compose
+    checksum: "sha256:https://github.com/docker/compose/releases/download/{{ compose_version }}/checksums.txt"
+    owner: root
+    group: root
+    mode: "0755"
+
+# Старая форма команды "docker-compose" (через дефис) тоже должна работать.
+- name: Link docker-compose to the same binary
+  ansible.builtin.file:
+    src: /usr/local/lib/docker/cli-plugins/docker-compose
+    dest: /usr/local/bin/docker-compose
+    state: link
+
+# append: true добавляет группу к уже существующим. Без него Ansible заменил бы
+# весь список групп пользователя одной docker.
+- name: Add spa user to docker group
+  ansible.builtin.user:
+    name: spa
+    groups: docker
+    append: true
+
+- name: Enable and start docker
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+
+# После обновления ядра нужна перезагрузка. Debian создаёт для этого файл-флаг.
+# register сохраняет результат проверки в переменную reboot_required.
+- name: Check whether a reboot is required after upgrade
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: reboot_required
+
+# when: выполнять задачу, только если условие верно (файл-флаг существует).
+- name: Warn if reboot is required
+  ansible.builtin.debug:
+    msg: "REBOOT REQUIRED on the host after full-upgrade"
+  when: reboot_required.stat.exists

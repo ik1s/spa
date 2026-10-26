@@ -1,0 +1,14 @@
+# Что VictoriaMetrics опрашивает (формат такой же, как у Prometheus).
+# Каждый job это отдельный источник метрик, он попадает в метку job="...".
+scrape_configs:
+  # VictoriaMetrics следит за самой собой. "localhost" здесь это её собственный контейнер.
+  - job_name: victoriametrics
+    scrape_interval: 10s
+    static_configs:
+      - targets: ["localhost:8428"]
+  # Наше приложение с датчиками. Оно работает на хосте, поэтому адрес
+  # host.docker.internal (см. extra_hosts в docker-compose.yml), а не localhost.
+  - job_name: sensors
+    scrape_interval: 10s
+    static_configs:
+      - targets: ["host.docker.internal:7777"]

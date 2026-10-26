@@ -1,0 +1,19 @@
+# Говорит Grafana, откуда автоматически загружать дашборды (JSON-файлы).
+# Сам дашборд лежит рядом: spa-sensors.json (графики температуры и влажности).
+apiVersion: 1
+
+providers:
+  - name: spa
+    orgId: 1
+    folder: ''
+    type: file
+    # Дашборд можно удалять и редактировать в интерфейсе Grafana.
+    disableDeletion: false
+    # Раз в 30 секунд Grafana проверяет каталог на новые и изменённые файлы,
+    # поэтому после обновления JSON перезапуск не нужен.
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      # Путь внутри контейнера (см. volumes в docker-compose.yml).
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false
