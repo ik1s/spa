@@ -15,6 +15,12 @@ WorkingDirectory=/opt/spa
 # Перед приложением поднимаем контейнеры (-d: в фоне).
 ExecStartPre=/usr/bin/docker compose up -d
 ExecStart=/opt/spa/app/venv/bin/python3 /opt/spa/app/main.py
+# Проверка после старта: ждём, пока /health начнёт отвечать кодом 200. curl делает до 15
+# попыток раз в секунду (--retry-connrefused повторяет и при "соединение отклонено", пока
+# приложение ещё запускается). Если /health так и не ответил, старт считается неудачным,
+# и systemd перезапустит сервис по Restart=on-failure. Код ответа не зависит от состояния
+# датчиков (при сбое DHT11 /health тоже отдаёт 200), поэтому проверяется именно HTTP-сервер.
+ExecStartPost=/usr/bin/curl -fsS --max-time 3 --retry 15 --retry-delay 1 --retry-connrefused -o /dev/null http://localhost:7777/health
 # ExecStopPost выполняется после того, как приложение уже остановилось,
 # поэтому контейнеры гасятся последними.
 ExecStopPost=/usr/bin/docker compose down
