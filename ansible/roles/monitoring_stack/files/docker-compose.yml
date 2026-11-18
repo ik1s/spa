@@ -29,6 +29,32 @@ services:
       # Файл со списком того, что VictoriaMetrics должна опрашивать (см. scrape.yml).
       - "--promscrape.config=/etc/victoriametrics/scrape.yml"
       - "--promscrape.config.strictParse=false"
+    # Драйвер journald отправляет вывод контейнера в журнал systemd хоста, а оттуда
+    # его забирает systemd-journal-upload и пересылает в VictoriaLogs.
+    # Команда "docker logs" при этом продолжает работать.
+    logging:
+      driver: journald
+
+  # Хранилище логов. Принимает логи из journald хоста и отдаёт их Grafana.
+  victorialogs:
+    image: victoriametrics/victoria-logs:latest
+    container_name: victorialogs
+    restart: unless-stopped
+    # У VictoriaLogs нет аутентификации, порт открыт в локальную сеть сознательно.
+    ports:
+      - "9428:9428"
+    volumes:
+      - ./data/victoria-logs:/victoria-logs-data
+    command:
+      - "-storageDataPath=/victoria-logs-data"
+      - "-httpListenAddr=:9428"
+      # Логи старше 30 дней удаляются автоматически.
+      - "-retentionPeriod=30d"
+      # Поля, по которым логи делятся на потоки: так запросы вида
+      # {_SYSTEMD_UNIT="..."} работают быстрее.
+      - "-journald.streamFields=_SYSTEMD_UNIT,CONTAINER_NAME"
+    logging:
+      driver: journald
 
   grafana:
     image: grafana/grafana:latest
@@ -38,6 +64,7 @@ services:
     # старта, а не ожидание, пока VictoriaMetrics будет готова принимать запросы.
     depends_on:
       - victoriametrics
+      - victorialogs
     ports:
       - "3000:3000"
     # Пароль администратора лежит в файле .env (его создаёт Ansible из шаблона),
@@ -46,6 +73,12 @@ services:
       - .env
     environment:
       GF_SECURITY_ADMIN_USER: admin
+      # Плагин источника данных для VictoriaLogs. Grafana скачивает его при старте
+      # (нужен доступ в интернет) и кладёт в data/grafana. Версия закреплена,
+      # чтобы обновление плагина не ломало дашборды неожиданно.
+      GF_INSTALL_PLUGINS: "victoriametrics-logs-datasource 0.33.1"
+    logging:
+      driver: journald
     volumes:
       - ./data/grafana:/var/lib/grafana
       # Источник данных и дашборды создаются автоматически из этих каталогов.

@@ -18,5 +18,30 @@ sensors:
     type: dht11     # тип датчика, см. SENSOR_TYPES в sensors/__init__.py
     pin: 4          # номер GPIO по нумерации BCM (GPIO4)
 
+  # Датчики ниже раскомментировать только после физического подключения: пока их нет,
+  # каждый опрос будет заканчиваться ошибкой I2C.
+  # - name: bh1750_1   # освещённость, GY-302
+  #   type: bh1750
+  #   address: 0x23    # 0x5C, если вывод ADDR подключён к питанию
+
+# Сервопривод SG90 на аппаратном ШИМ. Включать только после подключения (сигнал на GPIO12,
+# клемма IO12) и перезагрузки с оверлеем pwm (его добавляет Ansible).
+servo:
+  enabled: false
+  pwm_chip: 0             # /sys/class/pwm/pwmchip0
+  pwm_channel: 0          # канал 0 это GPIO12
+  min_angle: 0
+  max_angle: 180
+  min_pulse_us: 500       # ширина импульса для min_angle, подбирается под экземпляр сервы
+  max_pulse_us: 2400      # ширина импульса для max_angle
+  speed_deg_per_s: 60     # скорость поворота, градусов в секунду
+
+# Кнопка запуска прохода сервы (0 -> 180 -> 0). Один вывод кнопки на GPIO, другой на GND.
+# Включать после подключения кнопки; работает только вместе с servo.enabled: true.
+button:
+  enabled: false
+  pin: 23          # BCM, клемма IO23 платы
+  bounce_ms: 300   # защита от дребезга контактов
+
 logging:
   level: INFO       # DEBUG, INFO, WARNING или ERROR

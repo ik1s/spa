@@ -1,0 +1,6 @@
+# Настройки systemd-journal-upload: пересылает записи журнала systemd хоста
+# в VictoriaLogs. Файл создаёт Ansible (роль log_shipping), руками не правьте.
+[Upload]
+# VictoriaLogs понимает протокол systemd-journal-remote по этому пути.
+# localhost, потому что контейнер публикует порт 9428 на самом хосте.
+URL=http://localhost:9428/insert/journald

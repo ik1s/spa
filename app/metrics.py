@@ -20,6 +20,12 @@ temperature_celsius = Gauge(
 humidity_percent = Gauge(
     "spa_humidity_percent", "Sensor humidity reading", ["sensor"], registry=registry
 )
+illuminance_lux = Gauge(
+    "spa_illuminance_lux", "Illuminance reading, lux", ["sensor"], registry=registry
+)
+servo_angle_degrees = Gauge(
+    "spa_servo_angle_degrees", "Current servo angle in degrees (absent until the first command)", registry=registry
+)
 sensor_up = Gauge(
     "spa_sensor_up", "1 if the last read from this sensor succeeded, else 0", ["sensor"], registry=registry
 )
@@ -30,10 +36,36 @@ sensor_last_read_timestamp_seconds = Gauge(
 sensor_read_errors_total = Counter(
     "spa_sensor_read_errors_total", "Total failed read attempts", ["sensor"], registry=registry
 )
+sensor_reconnects_total = Counter(
+    "spa_sensor_reconnects_total", "Total software reconnect attempts of this sensor", ["sensor"], registry=registry
+)
 # Без меток: сбор включён или выключен для всего приложения сразу.
 collection_enabled = Gauge(
     "spa_collection_enabled", "1 if sensor collection is currently enabled, else 0", registry=registry
 )
+
+
+# Ключ в словаре, который возвращает Sensor.read(), -> метрика для него.
+# Новый вид измерения достаточно добавить сюда и описать Gauge выше.
+READINGS = {
+    "temperature_celsius": temperature_celsius,
+    "humidity_percent": humidity_percent,
+    "illuminance_lux": illuminance_lux,
+}
+
+
+def clear_readings(sensor: str):
+    """Убрать из /metrics значения датчика (при ошибке чтения).
+
+    Тогда в Grafana на графике будет разрыв, а не линия из последнего удачного
+    значения. Ряда может не быть (например, датчик ни разу не читался), поэтому
+    KeyError от remove() игнорируем.
+    """
+    for gauge in READINGS.values():
+        try:
+            gauge.remove(sensor)
+        except KeyError:
+            pass
 
 
 def render() -> bytes:

@@ -19,6 +19,7 @@
     - /opt/spa
     - /opt/spa/data
     - /opt/spa/data/victoria-metrics
+    - /opt/spa/data/victoria-logs
     - /opt/spa/provisioning/datasources
     - /opt/spa/provisioning/dashboards
 
@@ -53,14 +54,17 @@
 
 - name: Deploy Grafana datasource provisioning
   ansible.builtin.copy:
-    src: provisioning/datasources/victoriametrics.yml
-    dest: /opt/spa/provisioning/datasources/victoriametrics.yml
+    src: "provisioning/datasources/{{ item }}"
+    dest: "/opt/spa/provisioning/datasources/{{ item }}"
     owner: spa
     group: spa
     mode: "0644"
+  loop:
+    - victoriametrics.yml
+    - victorialogs.yml
   notify: restart spa-monitoring
 
-# У двух задач ниже нет notify: Grafana сама перечитывает каталог с дашбордами
+# У задач ниже нет notify: Grafana сама перечитывает каталог с дашбордами
 # каждые 30 секунд (updateIntervalSeconds), перезапуск не нужен.
 - name: Deploy Grafana dashboard provisioning config
   ansible.builtin.copy:
@@ -70,13 +74,16 @@
     group: spa
     mode: "0644"
 
-- name: Deploy spa sensors dashboard JSON
+- name: Deploy spa dashboards JSON (sensors and logs)
   ansible.builtin.copy:
-    src: provisioning/dashboards/spa-sensors.json
-    dest: /opt/spa/provisioning/dashboards/spa-sensors.json
+    src: "provisioning/dashboards/{{ item }}"
+    dest: "/opt/spa/provisioning/dashboards/{{ item }}"
     owner: spa
     group: spa
     mode: "0644"
+  loop:
+    - spa-sensors.json
+    - spa-logs.json
 
 # template подставляет значения в шаблон env.j2 (язык шаблонов Jinja2).
 # Пароль берётся из переменной окружения GF_ADMIN_PASS на вашем компьютере.

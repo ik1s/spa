@@ -37,6 +37,17 @@ _READ_WINDOW_SECONDS = 0.2
 # длиннее это 1.
 _BIT_THRESHOLD_MICROS = 50
 
+# Сколько секунд линия отдыхает свободной при переподключении. DHT11 после сбоя
+# нужна пауза, чтобы его внутренний автомат вернулся в ожидание стартового сигнала.
+_RECONNECT_IDLE_SECONDS = 2.0
+
+# Диапазон измерений DHT11 по даташиту: влажность 20-90 %, температура 0-50 °C.
+# Иногда контрольная сумма сходится и у искажённых данных (в логах встречались
+# 139 % влажности и 142 °C), а датчик может залипнуть на значении вне диапазона
+# (например, 10 %). Всё, что вне диапазона, отбрасываем как ошибку чтения.
+_HUMIDITY_RANGE = (20.0, 90.0)
+_TEMPERATURE_RANGE = (0.0, 50.0)
+
 
 class DHT11Sensor(Sensor):
     def __init__(self, cfg: dict):
@@ -47,6 +58,21 @@ class DHT11Sensor(Sensor):
         if GPIO is not None:
             GPIO.setwarnings(False)
             GPIO.setmode(GPIO.BCM)
+
+    def reconnect(self):
+        """Освободить пин, дать датчику отдохнуть и заново настроить GPIO.
+
+        Это только программный сброс: питание датчика мы не отключаем (оно идёт с
+        фиксированного пина 3V), поэтому аппаратный сбой он не вылечит.
+        """
+        if GPIO is None:
+            return
+        try:
+            GPIO.cleanup(self.pin)
+            time.sleep(_RECONNECT_IDLE_SECONDS)
+            GPIO.setmode(GPIO.BCM)
+        except Exception as exc:
+            raise SensorError(f"{self.name}: reconnect failed: {exc}") from exc
 
     def _capture_transitions(self):
         """Послать датчику стартовый сигнал и записать все смены уровня линии.
@@ -100,7 +126,7 @@ class DHT11Sensor(Sensor):
         if len(bit_durations) != 40:
             raise SensorError(
                 f"{self.name}: expected 40 bit pulses, got {len(bit_durations)} "
-                f"({len(transitions)} raw transitions) — check wiring"
+                f"({len(transitions)} raw transitions), timing glitch or wiring problem"
             )
 
         # Длинный импульс это 1, короткий это 0.
@@ -125,6 +151,13 @@ class DHT11Sensor(Sensor):
         # У DHT11 дробные части обычно нулевые, он выдаёт целые числа.
         humidity = data[0] + data[1] / 10
         temperature = data[2] + data[3] / 10
+        # Контрольная сумма сошлась, но значение может быть невозможным: отбрасываем.
+        if not (_HUMIDITY_RANGE[0] <= humidity <= _HUMIDITY_RANGE[1]
+                and _TEMPERATURE_RANGE[0] <= temperature <= _TEMPERATURE_RANGE[1]):
+            raise SensorError(
+                f"{self.name}: value out of range "
+                f"(humidity={humidity}, temperature={temperature}) {data}"
+            )
         return {
             "temperature_celsius": temperature,
             "humidity_percent": humidity,

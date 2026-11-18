@@ -1,0 +1,8 @@
+---
+# Срабатывает, только если изменился конфиг отправки логов (см. notify в tasks/main.yml).
+- name: restart systemd-journal-upload
+  ansible.builtin.systemd:
+    name: systemd-journal-upload.service
+    state: restarted
+    # Нужно, чтобы подхватился drop-in с политикой перезапуска.
+    daemon_reload: true

@@ -6,9 +6,12 @@
   # become: true значит "выполнять через sudo", для установки пакетов нужен root.
   become: true
   # Порядок ролей важен: сначала Docker, потом стек, который в нём работает,
-  # и в конце приложение. Теги позволяют запустить одну роль:
+  # потом оборудование хоста (оверлеи), приложение, и в конце отправка логов в VictoriaLogs. Теги позволяют
+  # запустить одну роль:
   #   ansible-playbook playbook.yml --tags app
   roles:
     - { role: docker, tags: [docker] }
     - { role: monitoring_stack, tags: [monitoring] }
+    - { role: host_hardware, tags: [hardware] }
     - { role: spa_app, tags: [app] }
+    - { role: log_shipping, tags: [logs] }

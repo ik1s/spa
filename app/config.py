@@ -24,6 +24,9 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> dict:
     # Эта настройка сейчас нигде не используется, оставлена на будущее.
     cfg["polling"].setdefault("metrics_update_seconds", cfg["polling"]["interval_seconds"])
     cfg.setdefault("collection", {}).setdefault("always_on", True)
+    # Сервопривод по умолчанию выключен: включать, когда он физически подключён.
+    cfg.setdefault("servo", {}).setdefault("enabled", False)
+    cfg.setdefault("button", {}).setdefault("enabled", False)
     cfg.setdefault("sensors", [])
     cfg.setdefault("logging", {}).setdefault("level", "INFO")
     return cfg

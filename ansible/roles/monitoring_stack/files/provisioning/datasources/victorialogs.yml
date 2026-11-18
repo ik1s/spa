@@ -1,0 +1,15 @@
+# Источник данных для логов. Grafana создаёт его сама при старте.
+apiVersion: 1
+
+datasources:
+  - name: VictoriaLogs
+    # Фиксированный uid нужен, потому что на него ссылается дашборд spa-logs.json.
+    uid: spa-victorialogs
+    # Идентификатор плагина, который ставится через GF_INSTALL_PLUGINS (docker-compose.yml).
+    type: victoriametrics-logs-datasource
+    access: proxy
+    # Имя контейнера, Docker Compose сам настраивает DNS между сервисами.
+    url: http://victorialogs:9428
+    # Источником по умолчанию остаётся VictoriaMetrics (метрики).
+    isDefault: false
+    editable: true

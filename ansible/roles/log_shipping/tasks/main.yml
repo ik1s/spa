@@ -1,0 +1,58 @@
+---
+# Роль настраивает отправку логов хоста в VictoriaLogs.
+# Путь логов: приложение spa и контейнеры пишут в журнал systemd (journald),
+# служба systemd-journal-upload читает журнал и отправляет записи в VictoriaLogs.
+# Отдельный агент для сбора логов не нужен.
+#
+# Важно: служба отправляет ВЕСЬ журнал хоста, а не только наши сервисы. В VictoriaLogs
+# попадают и записи sshd и sudo, а у порта 9428 нет аутентификации.
+
+# systemd-journal-upload входит в пакет systemd-journal-remote.
+- name: Install systemd-journal-remote (contains systemd-journal-upload)
+  ansible.builtin.apt:
+    name: systemd-journal-remote
+    state: present
+
+- name: Deploy journal-upload config
+  ansible.builtin.template:
+    src: journal-upload.conf.j2
+    dest: /etc/systemd/journal-upload.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart systemd-journal-upload
+
+# При загрузке хоста служба стартует раньше VictoriaLogs (она в контейнере), не может
+# подключиться к :9428 и сразу завершается с ошибкой. По умолчанию systemd пробует
+# перезапустить её 5 раз за несколько секунд и сдаётся ("Start request repeated too quickly"),
+# после чего логи не отправляются, пока служба не запущена вручную. Drop-in заставляет
+# systemd перезапускать её раз в 10 секунд без ограничения числа попыток.
+- name: Create drop-in directory for systemd-journal-upload
+  ansible.builtin.file:
+    path: /etc/systemd/system/systemd-journal-upload.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy restart policy drop-in for systemd-journal-upload
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/systemd-journal-upload.service.d/restart.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      # 0 отключает лимит перезапусков за интервал.
+      StartLimitIntervalSec=0
+
+      [Service]
+      Restart=always
+      RestartSec=10
+  notify: restart systemd-journal-upload
+
+- name: Enable and start systemd-journal-upload
+  ansible.builtin.systemd:
+    name: systemd-journal-upload.service
+    enabled: true
+    state: started

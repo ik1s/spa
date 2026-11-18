@@ -26,3 +26,9 @@ class Sensor:
         При неудаче нужно бросить SensorError.
         """
         raise NotImplementedError
+
+    def reconnect(self):
+        """Программно переинициализировать датчик после серии неудачных чтений.
+
+        По умолчанию ничего не делает. При неудаче можно бросить SensorError.
+        """

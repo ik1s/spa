@@ -1,4 +1,5 @@
 from .base import Sensor, SensorError
+from .bh1750 import BH1750Sensor
 from .dht11 import DHT11Sensor
 
 # Реестр датчиков: значение поля "type" из config.yaml -> класс датчика.
@@ -6,6 +7,7 @@ from .dht11 import DHT11Sensor
 # классах. Новый тип датчика достаточно добавить сюда одной строкой.
 SENSOR_TYPES = {
     "dht11": DHT11Sensor,
+    "bh1750": BH1750Sensor,
 }
 
 

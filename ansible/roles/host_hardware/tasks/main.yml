@@ -1,0 +1,37 @@
+---
+# Роль включает в /boot/firmware/config.txt оборудование, которое нужно приложению.
+# Изменения вступают в силу только после перезагрузки хоста; роль сама Pi не перезагружает.
+
+# Аппаратный ШИМ для сервопривода SG90: сигнал на GPIO12 (клемма IO12).
+# func=4 это альтернативная функция PWM0_CHAN0 этого пина на Raspberry Pi 5.
+# После перезагрузки появится /sys/class/pwm/pwmchip0, канал 0 это GPIO12.
+# backup: true не используем: /boot/firmware это FAT, имя бэкапа с символами @ и ~
+# на ней недопустимо (модуль падает с Errno 22).
+# Строка добавляется в конец файла, а он заканчивается секцией [all], поэтому
+# оверлей применяется на всех моделях.
+- name: Enable hardware PWM overlay on GPIO12 (servo)
+  ansible.builtin.lineinfile:
+    path: /boot/firmware/config.txt
+    line: dtoverlay=pwm,pin=12,func=4
+    insertafter: EOF
+  register: pwm_overlay
+
+- name: Tell that a reboot is needed for the PWM overlay
+  ansible.builtin.debug:
+    msg: "config.txt changed: reboot the host to get /sys/class/pwm/pwmchip0"
+  when: pwm_overlay.changed
+
+# UART на GPIO14 (TXD) и GPIO15 (RXD), клеммы TXD и RXD платы: для тепловизора GY-MCU90640,
+# который отдаёт кадры по последовательному порту. На Raspberry Pi 5 это /dev/ttyAMA0.
+# Консоль ядра сидит на отдельном отладочном порту ttyAMA10 (serial0), поэтому конфликта нет.
+- name: Enable UART0 on GPIO14/15 (thermal camera)
+  ansible.builtin.lineinfile:
+    path: /boot/firmware/config.txt
+    line: dtoverlay=uart0-pi5
+    insertafter: EOF
+  register: uart_overlay
+
+- name: Tell that a reboot is needed for the UART overlay
+  ansible.builtin.debug:
+    msg: "config.txt changed: reboot the host to get /dev/ttyAMA0"
+  when: uart_overlay.changed
