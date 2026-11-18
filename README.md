@@ -106,6 +106,109 @@ DHT11 иногда отвечает с неверной контрольной �
 реальное положение сервы после включения неизвестно. У `/servo` нет аутентификации, как и у остальных
 портов: в интернет его публиковать нельзя.
 
+## Схема подключения
+
+Подписи клемм по плате Prototyping Rev 1.2. Серая рамка с пунктиром: оборудование, которое ещё не
+пришло. Красным выделено то, что нельзя подключать к 5 В или без общей земли.
+
+### Сигнальные провода
+
+```mermaid
+flowchart LR
+  subgraph PI["Raspberry Pi 5 (клеммы платы Prototyping Rev 1.2)"]
+    GCLK["GCLK (GPIO4)"]
+    SDA["SDA (GPIO2)"]
+    SCL["SCL (GPIO3)"]
+    IO18["IO18"]
+    IO19["IO19"]
+    IO20["IO20"]
+    IO12["IO12 (GPIO12, ШИМ)"]
+    IO23["IO23 (GPIO23)"]
+    TXD["TXD (GPIO14)"]
+    RXD["RXD (GPIO15)"]
+  end
+
+  DHT["DHT11<br/>температура, влажность"]
+  BH["BH1750 (GY-302)<br/>освещённость, адрес 0x23"]
+  MIC["SPH0645<br/>микрофон I2S"]
+  SERVO["Серва SG90"]
+  BTN["Кнопка<br/>(второй вывод на GND)"]
+  THERM["Тепловизор GY-MCU90640<br/>(ещё не пришёл)"]
+
+  GCLK ---|"DATA"| DHT
+  SDA ---|"SDA"| BH
+  SCL ---|"SCL"| BH
+  IO18 ---|"BCLK"| MIC
+  IO19 ---|"LRCL"| MIC
+  IO20 ---|"DOUT"| MIC
+  IO12 -->|"сигнал (оранжевый)"| SERVO
+  IO23 --- BTN
+  TXD -->|"RX модуля"| THERM
+  THERM -->|"TX модуля"| RXD
+
+  classDef later fill:#eee,stroke:#999,stroke-dasharray: 4 3,color:#000
+  class THERM later
+```
+
+### Питание и земля
+
+Питание и земля общие для нескольких устройств, а клемма 3V на плате одна. Поэтому нужны рейки
+(мини-макетка или клеммы Wago): так схема остаётся читаемой.
+
+```mermaid
+flowchart LR
+  subgraph PI["Плата Prototyping Rev 1.2"]
+    V3["3V"]
+    GND["GND"]
+  end
+
+  RAIL3["Рейка 3V<br/>(макетка или Wago)"]
+  RAILG["Рейка GND<br/>(макетка или Wago)"]
+  PSU["Блок питания 5 В, 1-2 А<br/>(отдельный, для серы)"]
+
+  DHT["DHT11"]
+  BH["BH1750"]
+  MIC["SPH0645<br/>только 3V, не 5V"]
+  THERM["Тепловизор<br/>(если UART 3,3 В)"]
+  SERVO["Серва SG90"]
+  CAP["Конденсатор 470-1000 мкФ<br/>10 В, у серы, полярность"]
+  BTN["Кнопка"]
+
+  V3 --> RAIL3
+  GND --> RAILG
+  RAIL3 --> DHT
+  RAIL3 --> BH
+  RAIL3 --> MIC
+  RAIL3 -.-> THERM
+  RAILG --> DHT
+  RAILG --> BH
+  RAILG --> MIC
+  RAILG -->|"SEL"| MIC
+  RAILG --> THERM
+  RAILG --> BTN
+
+  PSU -->|"+5 В, красный"| SERVO
+  PSU -->|"минус, коричневый"| SERVO
+  PSU -. "минус блока = GND Pi<br/>(общая земля)" .- RAILG
+  CAP -.- SERVO
+
+  classDef warn fill:#ffe0e0,stroke:#c00,color:#000
+  classDef later fill:#eee,stroke:#999,stroke-dasharray: 4 3,color:#000
+  class MIC,SERVO warn
+  class THERM later
+```
+
+Картинки тех же схем лежат в `docs/` (`wiring-signals.png`, `wiring-power.png`), исходники Mermaid
+рядом (`*.mmd`). Перерисовка: `mmdc -i docs/wiring-signals.mmd -o docs/wiring-signals.png -b white -w 1200`
+(пакет `@mermaid-js/mermaid-cli`).
+
+Правила, которые схема не показывает:
+- Все работы при выключенном и отсоединённом питании Pi.
+- Серву подключайте и отключайте только при выключенном питании. Плюс блока 5 В с клеммами 5V и 3V
+  платы не соединяйте.
+- Перед включением прозвоните, что рейки 3V и GND между собой не звонятся.
+- У тепловизора сначала сверьте уровень UART (3,3 В или 5 В): 5 В на RXD сожжёт Pi.
+
 ## Что нужно
 
 - Raspberry Pi 5 с Debian 13 (trixie), пакет `python3-rpi-lgpio` (даёт совместимый `RPi.GPIO` для чипа RP1).

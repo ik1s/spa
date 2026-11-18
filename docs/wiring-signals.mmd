@@ -1,0 +1,34 @@
+flowchart LR
+  subgraph PI["Raspberry Pi 5 (клеммы платы Prototyping Rev 1.2)"]
+    GCLK["GCLK (GPIO4)"]
+    SDA["SDA (GPIO2)"]
+    SCL["SCL (GPIO3)"]
+    IO18["IO18"]
+    IO19["IO19"]
+    IO20["IO20"]
+    IO12["IO12 (GPIO12, ШИМ)"]
+    IO23["IO23 (GPIO23)"]
+    TXD["TXD (GPIO14)"]
+    RXD["RXD (GPIO15)"]
+  end
+
+  DHT["DHT11<br/>температура, влажность"]
+  BH["BH1750 (GY-302)<br/>освещённость, адрес 0x23"]
+  MIC["SPH0645<br/>микрофон I2S"]
+  SERVO["Серва SG90"]
+  BTN["Кнопка<br/>(второй вывод на GND)"]
+  THERM["Тепловизор GY-MCU90640<br/>(ещё не пришёл)"]
+
+  GCLK ---|"DATA"| DHT
+  SDA ---|"SDA"| BH
+  SCL ---|"SCL"| BH
+  IO18 ---|"BCLK"| MIC
+  IO19 ---|"LRCL"| MIC
+  IO20 ---|"DOUT"| MIC
+  IO12 -->|"сигнал (оранжевый)"| SERVO
+  IO23 --- BTN
+  TXD -->|"RX модуля"| THERM
+  THERM -->|"TX модуля"| RXD
+
+  classDef later fill:#eee,stroke:#999,stroke-dasharray: 4 3,color:#000
+  class THERM later
