@@ -61,6 +61,21 @@ collection_remaining_seconds = Gauge(
 )
 
 
+# Пока идёт замер: метка session = id замера (время начала ГГГГММДД_ЧЧММСС), значение =
+# unix-время начала. По отсчётам этой серии в VictoriaMetrics /reports находит замеры.
+collection_session_start = Gauge(
+    "spa_collection_session_start_timestamp_seconds",
+    "Start time of the current measurement session (present only while it runs)",
+    ["session"],
+    registry=registry,
+)
+
+
+def clear_sessions():
+    """Убрать серию замера из /metrics, когда он закончился."""
+    collection_session_start.clear()
+
+
 # Ключ в словаре, который возвращает Sensor.read(), -> метрика для него.
 # Новый вид измерения достаточно добавить сюда и описать Gauge выше.
 READINGS = {

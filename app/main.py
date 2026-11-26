@@ -10,10 +10,12 @@
 """
 import json
 import logging
+import re
 import signal
 import sys
 import threading
 import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import metrics
@@ -24,6 +26,7 @@ from button import Button, ButtonError
 from servo import Servo, ServoBusy, ServoError
 from sensors.base import SensorError
 from thermal_image import PngCache, SnapshotStore
+import reports
 
 log = logging.getLogger("spa")
 
@@ -58,6 +61,8 @@ class Collector:
         snap = cfg["thermal_snapshots"]
         self.snapshots = SnapshotStore(snap["dir"], snap["keep"]) if snap["enabled"] else None
         self._snapshot_pending = False
+        # id текущего замера (время начала ГГГГММДД_ЧЧММСС) для метки session, None вне замера.
+        self.session_id = None
         # Сколько опросов подряд датчик отвечает ошибкой и когда его переподключали в последний раз.
         self._failures = {s.name: 0 for s in self.sensors}
         self._last_reconnect = {s.name: 0.0 for s in self.sensors}
@@ -96,6 +101,13 @@ class Collector:
             restarted = self._remaining() > 0
             self._session_until = time.monotonic() + self.duration
             self._snapshot_pending = True
+            # Повторное нажатие во время замера продлевает его: это тот же замер в /reports.
+            if not restarted and not self.always_on:
+                started = time.time()
+                self.session_id = reports.session_id(started)
+                # Прошлый замер мог истечь, а поток опроса ещё не успел убрать его серию.
+                metrics.clear_sessions()
+                metrics.collection_session_start.labels(session=self.session_id).set(int(started))
         log.info("measurement %s for %g s", "restarted" if restarted else "started", self.duration)
         self._wake.set()
         return self.collection_status()
@@ -133,6 +145,9 @@ class Collector:
             # разрыв до следующего замера, а не линия из последних значений.
             for sensor in self.sensors:
                 metrics.clear_readings(sensor.name)
+            metrics.clear_sessions()
+            with self._lock:
+                self.session_id = None
             log.info("measurement finished")
         self._was_active = active
 
@@ -219,8 +234,13 @@ class Collector:
                 log.info("thermal snapshot saved: %s", path)
 
 
+# Имя снимка тепловизора: только такие файлы отдаёт /snapshots/ (защита от ../ в пути).
+SNAPSHOT_RE = re.compile(r"^thermal_\d{8}_\d{6}\.png$")
+
+
 def make_handler(collector: Collector, servo=None):
     png_cache = PngCache()
+    report_pages = reports.Reports(collector.cfg["reports"])
 
     # Класс обработчика объявлен внутри функции, чтобы его методы видели
     # переменную collector: сервер сам создаёт обработчик на каждый запрос и
@@ -229,6 +249,31 @@ def make_handler(collector: Collector, servo=None):
         def log_message(self, fmt, *args):
             # Вместо стандартной печати в stderr пишем в общий лог приложения.
             log.info("%s - %s", self.address_string(), fmt % args)
+
+        def _send_bytes(self, status: int, content_type: str, body: bytes):
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _send_html(self, status: int, body: bytes):
+            self._send_bytes(status, "text/html; charset=utf-8", body)
+
+        def _request_host(self) -> str:
+            """Хост, по которому открыли страницу (без порта): Grafana на нём же, порт 3000."""
+            host = urllib.parse.urlsplit("//" + (self.headers.get("Host") or "localhost")).hostname or "localhost"
+            return f"[{host}]" if ":" in host else host
+
+        def _snapshots_between(self, start: float, end: float) -> list:
+            """Имена снимков тепловизора, сделанных с start по end (время берётся из имени файла)."""
+            snaps = collector.snapshots
+            if snaps is None or not snaps.dir.is_dir():
+                return []
+            names = sorted(p.name for p in snaps.dir.glob("thermal_*.png"))
+            # Снимок сохраняется после первого опроса, через секунды после начала замера:
+            # секунда запаса в начале на округление времени в имени файла.
+            return [n for n in names if (t := reports.snapshot_time(n)) is not None and start - 1 <= t <= end]
 
         def _send_json(self, status: int, payload: dict):
             body = json.dumps(payload).encode()
@@ -316,9 +361,23 @@ def make_handler(collector: Collector, servo=None):
                     self._send_json(503, {"status": "servo_disabled"})
                 else:
                     self._send_json(200, servo.status())
-            elif self.path == "/reports":
-                # 501 Not Implemented: отчёты ещё не сделаны.
-                self._send_json(501, {"status": "not_implemented"})
+            elif self.path in ("/reports", "/reports/"):
+                self._send_html(200, report_pages.render_index(collector.session_id))
+            elif self.path.startswith("/reports/"):
+                sid = self.path[len("/reports/"):]
+                page = report_pages.render_report(sid, collector.session_id, self._snapshots_between, self._request_host())
+                if page is None:
+                    self._send_json(404, {"status": "not_found"})
+                else:
+                    self._send_html(200, page)
+            elif self.path.startswith("/snapshots/"):
+                name = self.path[len("/snapshots/"):]
+                snaps = collector.snapshots
+                path = snaps.dir / name if snaps and SNAPSHOT_RE.match(name) else None
+                if path is None or not path.is_file():
+                    self._send_json(404, {"status": "not_found"})
+                else:
+                    self._send_bytes(200, "image/png", path.read_bytes())
             else:
                 self._send_json(404, {"status": "not_found"})
 

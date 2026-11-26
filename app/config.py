@@ -35,6 +35,12 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> dict:
     snap.setdefault("enabled", True)
     snap.setdefault("dir", "/opt/spa/data/thermal")
     snap.setdefault("keep", 100)
+    rep = cfg.setdefault("reports", {})
+    rep.setdefault("victoria_url", "http://localhost:8428")
+    rep.setdefault("lookback_days", 31)
+    # Пусто: ссылка на Grafana строится от адреса, по которому открыли /reports (порт 3000).
+    rep.setdefault("grafana_url", "")
+    rep.setdefault("norms", {})
     cfg.setdefault("sensors", [])
     cfg.setdefault("logging", {}).setdefault("level", "INFO")
     return cfg
