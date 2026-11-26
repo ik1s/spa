@@ -1,3 +1,4 @@
 prometheus_client
 pyyaml
 smbus2
+bleak

@@ -39,6 +39,11 @@ ROWS = [
     ("illuminance_lux", "Освещённость", "лк",
      ("min_over_time(spa_illuminance_lux{w})", "avg_over_time(spa_illuminance_lux{w})",
       "max_over_time(spa_illuminance_lux{w})")),
+    # Наружный воздух (беспроводной датчик за окном): по СанПиН не нормируется, но по нему
+    # определяется период года.
+    ("outdoor_temperature", "Температура наружного воздуха", "°C",
+     ("min_over_time(spa_outdoor_temperature_celsius{w})", "avg_over_time(spa_outdoor_temperature_celsius{w})",
+      "max_over_time(spa_outdoor_temperature_celsius{w})")),
     # Тепловизор: самый холодный пиксель за замер, среднее по кадрам, самый горячий пиксель.
     ("thermal", "Температура поверхностей (тепловизор)", "°C",
      ("min_over_time(spa_thermal_min_celsius{w})", "avg_over_time(spa_thermal_mean_celsius{w})",
@@ -54,7 +59,9 @@ class Reports:
     def __init__(self, cfg: dict):
         self.vm_url = cfg["victoria_url"].rstrip("/")
         self.lookback = cfg["lookback_days"] * 86400
-        self.norms = cfg["norms"]
+        # Норматив может быть строкой (только текст) или словарём с text и границами cold/warm.
+        self.norms = {k: (v if isinstance(v, dict) else {"text": v}) for k, v in cfg["norms"].items()}
+        self.season = cfg["season"]
         self.grafana_url = cfg["grafana_url"]
 
     # --- запросы к VictoriaMetrics ---
@@ -110,6 +117,46 @@ class Reports:
                 rows.append((key, title, unit, sensor, lo.get(sensor), mean[sensor], hi.get(sensor)))
         return rows
 
+    # --- оценка по нормативам ---
+
+    def season_of(self, ts: float):
+        """(cold или warm, пояснение для страницы).
+
+        auto: по СанПиН (п. 91) холодный период — среднесуточная температура наружного воздуха
+        +10 °C и ниже. Если есть уличный датчик, берём его среднее за сутки до начала замера,
+        иначе считаем холодными месяцы с октября по апрель.
+        """
+        if self.season != "auto":
+            return self.season, "задан в настройках"
+        try:
+            outdoor = self._query("avg_over_time(spa_outdoor_temperature_celsius[24h])", ts)
+        except (VictoriaError, ValueError):
+            outdoor = {}
+        if outdoor:
+            mean = sum(outdoor.values()) / len(outdoor)
+            return ("cold" if mean <= 10 else "warm"), f"среднесуточная наружная температура {_num(mean)} °C"
+        month_cold = datetime.fromtimestamp(ts).month in (10, 11, 12, 1, 2, 3, 4)
+        return ("cold" if month_cold else "warm"), "определён по месяцу замера: уличного датчика нет"
+
+    def grade(self, key: str, season: str, value):
+        """ok (в оптимальном), warn (только в допустимом), bad (вне допустимого) или None (не оценивается)."""
+        limits = self.norms.get(key, {}).get(season)
+        if value is None or not limits:
+            return None
+        # Сравниваем то, что видно на странице (одна цифра после запятой), иначе 24,0 могло бы
+        # оказаться «выше 24».
+        value = round(value, 1)
+
+        def inside(bounds):
+            lo, hi = bounds
+            return (lo is None or value >= lo) and (hi is None or value <= hi)
+
+        if "permissible" in limits and not inside(limits["permissible"]):
+            return "bad"
+        if "optimal" in limits:
+            return "ok" if inside(limits["optimal"]) else "warn"
+        return "ok"
+
     # --- HTML ---
 
     def render_index(self, current_id) -> bytes:
@@ -143,11 +190,18 @@ class Reports:
                                    f"данные из VictoriaMetrics: {html.escape(str(exc))}</p>")
         running = sid == current_id
         end = time.time() if running else session["end"]
+        season, season_how = self.season_of(session["start"])
         snapshots = snapshots_between(session["start"], end + 10)
+        def cell(key, value):
+            grade = self.grade(key, season, value)
+            cls = f"num {grade}" if grade else "num"
+            hint = f" title=\"{_GRADE_TEXT[grade]}\"" if grade else ""
+            return f"<td class=\"{cls}\"{hint}>{_num(value)}</td>"
+
         table_rows = "".join(
             f"<tr><td>{html.escape(title)}, {unit}</td><td>{html.escape(sensor)}</td>"
-            f"<td class=\"num\">{_num(lo)}</td><td class=\"num\">{_num(mean)}</td><td class=\"num\">{_num(hi)}</td>"
-            f"<td>{html.escape(self.norms.get(key, '—'))}</td></tr>"
+            f"{cell(key, lo)}{cell(key, mean)}{cell(key, hi)}"
+            f"<td>{html.escape(self.norms.get(key, {}).get('text', '—'))}</td></tr>"
             for key, title, unit, sensor, lo, mean, hi in rows
         )
         table = (
@@ -169,6 +223,11 @@ class Reports:
             f"<p>{'Идёт' if running else 'Окончание: ' + _fmt_time(session['end'])}, "
             f"длительность {_duration({'start': session['start'], 'end': end}, False)}.</p>"
             f"<p><a href=\"{html.escape(dashboard)}\">Графики за время замера в Grafana</a></p>"
+            f"<p>Оценка по нормам {'холодного' if season == 'cold' else 'тёплого'} периода года"
+            f" ({html.escape(season_how)}): "
+            "<span class=\"legend ok\">в оптимальном диапазоне</span> "
+            "<span class=\"legend warn\">в допустимом</span> "
+            "<span class=\"legend bad\">вне допустимого</span></p>"
             f"{table}"
             "<p class=\"note\">Значения из VictoriaMetrics (отсчёты раз в 10 с), время окончания замера "
             "с точностью до 10 с. Нормативы для жилой комнаты по СанПиН 1.2.3685-21; микроклимат "
@@ -181,12 +240,28 @@ class Reports:
         return _page(f"Замер {sid}", body)
 
 
+_GRADE_TEXT = {
+    "ok": "в оптимальном диапазоне СанПиН",
+    "warn": "в допустимом диапазоне, но не в оптимальном",
+    "bad": "вне допустимого диапазона СанПиН",
+}
+
+# Тёмная тема. Цвета оценок подобраны под тёмный фон: текст читается и без цвета, а цвет
+# дублируется подсказкой (title) у ячейки.
 _STYLE = """
-body{font-family:sans-serif;margin:2em;max-width:62em;color:#222}
+:root{color-scheme:dark}
+body{font-family:sans-serif;margin:2em;max-width:62em;background:#16181d;color:#d8dde6}
+a{color:#7fb4ff} a:visited{color:#b49cff}
+h1,h2{color:#f0f3f8;font-weight:600}
 table{border-collapse:collapse;margin:1em 0}
-th,td{border:1px solid #bbb;padding:.35em .7em;text-align:left}
-th{background:#eee} td.num{text-align:right;font-variant-numeric:tabular-nums}
-.note{color:#666;font-size:.9em} img{image-rendering:pixelated;margin:.3em;border:1px solid #bbb}
+th,td{border:1px solid #343a46;padding:.35em .7em;text-align:left}
+th{background:#22262e;color:#f0f3f8} tr:nth-child(even) td{background:#1b1e24}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+td.ok,.legend.ok{background:#173d2a !important;color:#8fe3ae}
+td.warn,.legend.warn{background:#4a3d12 !important;color:#ffd166}
+td.bad,.legend.bad{background:#5a1d22 !important;color:#ff8a8a;font-weight:600}
+.legend{padding:.1em .5em;border-radius:3px;white-space:nowrap}
+.note{color:#8b93a1;font-size:.9em} img{image-rendering:pixelated;margin:.3em;border:1px solid #343a46}
 """
 
 

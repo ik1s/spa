@@ -35,3 +35,28 @@
   ansible.builtin.debug:
     msg: "config.txt changed: reboot the host to get /dev/ttyAMA0"
   when: uart_overlay.changed
+
+# Bluetooth для беспроводных датчиков (Inkbird IBS-TH2 и др.): приложение слушает их рассылки
+# через BlueZ (библиотека bleak, D-Bus). На чистой Raspberry Pi OS адаптер hci0 программно
+# заблокирован (rfkill, PowerState: off-blocked). systemd-rfkill запоминает состояние, поэтому
+# разблокировка переживает перезагрузку. После разблокировки BlueZ включает адаптер сам
+# (AutoEnable=true по умолчанию).
+- name: Install BlueZ (Bluetooth stack)
+  ansible.builtin.apt:
+    name: bluez
+    state: present
+
+- name: Enable Bluetooth service
+  ansible.builtin.systemd:
+    name: bluetooth.service
+    enabled: true
+    state: started
+
+- name: Check whether Bluetooth is soft-blocked
+  ansible.builtin.command: rfkill list bluetooth
+  register: bt_rfkill
+  changed_when: false
+
+- name: Unblock Bluetooth (rfkill)
+  ansible.builtin.command: rfkill unblock bluetooth
+  when: "'Soft blocked: yes' in bt_rfkill.stdout"

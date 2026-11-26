@@ -54,9 +54,10 @@ class HealthState:
             collection_enabled = self._collection_enabled
 
         # Общий статус по статусам датчиков:
-        #   все ok -> "ok"; датчиков нет -> "unknown";
+        #   все ok -> "ok"; датчиков нет или ни один ещё не опрашивался -> "unknown";
         #   часть ok, часть нет -> "degraded"; ни один не ok -> "error".
-        statuses = {s["status"] for s in sensors.values()}
+        # Датчики, которые ещё не опрашивались (замера после запуска не было), не считаем ошибкой.
+        statuses = {s["status"] for s in sensors.values()} - {"unknown"}
         if not statuses or statuses == {"ok"}:
             overall = "ok" if statuses else "unknown"
         elif "ok" in statuses:

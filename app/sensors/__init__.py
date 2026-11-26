@@ -1,5 +1,6 @@
 from .base import Sensor, SensorError
 from .bh1750 import BH1750Sensor
+from .ble_inkbird import InkbirdSensor
 from .dht11 import DHT11Sensor
 from .mlx90640 import MLX90640Sensor
 
@@ -10,6 +11,7 @@ SENSOR_TYPES = {
     "dht11": DHT11Sensor,
     "bh1750": BH1750Sensor,
     "mlx90640": MLX90640Sensor,
+    "inkbird_ibs_th": InkbirdSensor,
 }
 
 

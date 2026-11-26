@@ -41,6 +41,9 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> dict:
     # Пусто: ссылка на Grafana строится от адреса, по которому открыли /reports (порт 3000).
     rep.setdefault("grafana_url", "")
     rep.setdefault("norms", {})
+    rep.setdefault("season", "auto")
+    if rep["season"] not in ("auto", "cold", "warm"):
+        raise ValueError("reports.season must be auto, cold or warm")
     cfg.setdefault("sensors", [])
     cfg.setdefault("logging", {}).setdefault("level", "INFO")
     return cfg

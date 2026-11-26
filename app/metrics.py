@@ -32,6 +32,15 @@ thermal_max_celsius = Gauge(
 thermal_mean_celsius = Gauge(
     "spa_thermal_mean_celsius", "Mean temperature over the thermal camera frame", ["sensor"], registry=registry
 )
+outdoor_temperature_celsius = Gauge(
+    "spa_outdoor_temperature_celsius", "Outdoor air temperature (sensor outside the window)", ["sensor"], registry=registry
+)
+outdoor_humidity_percent = Gauge(
+    "spa_outdoor_humidity_percent", "Outdoor relative humidity", ["sensor"], registry=registry
+)
+battery_percent = Gauge(
+    "spa_sensor_battery_percent", "Battery level reported by a wireless sensor", ["sensor"], registry=registry
+)
 servo_angle_degrees = Gauge(
     "spa_servo_angle_degrees", "Current servo angle in degrees (absent until the first command)", registry=registry
 )
@@ -85,6 +94,9 @@ READINGS = {
     "thermal_min_celsius": thermal_min_celsius,
     "thermal_max_celsius": thermal_max_celsius,
     "thermal_mean_celsius": thermal_mean_celsius,
+    "outdoor_temperature_celsius": outdoor_temperature_celsius,
+    "outdoor_humidity_percent": outdoor_humidity_percent,
+    "battery_percent": battery_percent,
 }
 
 
