@@ -34,13 +34,18 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> dict:
     snap = cfg.setdefault("thermal_snapshots", {})
     snap.setdefault("enabled", True)
     snap.setdefault("dir", "/opt/spa/data/thermal")
-    snap.setdefault("keep", 100)
+    snap.setdefault("keep", 30)  # число замеров, снимки которых хранятся
     rep = cfg.setdefault("reports", {})
     rep.setdefault("victoria_url", "http://localhost:8428")
     rep.setdefault("lookback_days", 31)
     # Пусто: ссылка на Grafana строится от адреса, по которому открыли /reports (порт 3000).
     rep.setdefault("grafana_url", "")
     rep.setdefault("norms", {})
+    # Поиск теплопотерь: зона холоднее воздуха комнаты на delta_celsius и больше (СП 50.13330.2012,
+    # табл. 5: 4,0 °C для наружных стен жилых зданий) или холоднее точки росы.
+    hl = rep.setdefault("heat_loss", {})
+    hl.setdefault("delta_celsius", 4.0)
+    hl.setdefault("min_zone_pixels", 2)
     rep.setdefault("season", "auto")
     if rep["season"] not in ("auto", "cold", "warm"):
         raise ValueError("reports.season must be auto, cold or warm")

@@ -21,6 +21,24 @@
     state: absent
   notify: restart spa-monitoring
 
+# До 2026-11-26 снимки тепловизора лежали прямо в /opt/spa/data/thermal/, теперь каждый замер в своей
+# подпапке, и ротация удаляет только подпапки. Старые файлы верхнего уровня убираем.
+- name: Find thermal snapshots of the old flat layout
+  ansible.builtin.find:
+    paths: /opt/spa/data/thermal
+    patterns: "thermal_*.png,thermal_*.json"
+    file_type: file
+    recurse: false
+  register: old_flat_snapshots
+
+- name: Remove thermal snapshots of the old flat layout
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ old_flat_snapshots.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+
 # venv это изолированное окружение Python для зависимостей приложения.
 # --system-site-packages нужен, чтобы оно видело системный пакет
 # python3-rpi-lgpio (модуль RPi.GPIO для Raspberry Pi 5): через pip он не ставится.

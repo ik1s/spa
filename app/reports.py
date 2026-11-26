@@ -15,6 +15,7 @@ spa_collection_session_start_timestamp_seconds{session="<ГГГГММДД_ЧЧМ
 import html
 import json
 import logging
+import math
 import re
 import time
 import urllib.parse
@@ -24,8 +25,15 @@ from datetime import datetime
 log = logging.getLogger("spa")
 
 SESSION_METRIC = "spa_collection_session_start_timestamp_seconds"
-# id замера = время начала ГГГГММДД_ЧЧММСС, оно же метка session.
+# id замера = время начала ГГГГММДД_ЧЧММСС, оно же метка session и имя подпапки снимков.
 ID_RE = re.compile(r"^\d{8}_\d{6}$")
+# Имя снимка тепловизора (защита от ../ в путях /snapshots/ и /reports/<id>/marked/).
+SNAPSHOT_RE = re.compile(r"^thermal_\d{8}_\d{6}\.png$")
+
+# Цвета контуров на размеченных снимках.
+MARK_COLD = (0, 229, 255)      # холоднее воздуха комнаты на delta_celsius и больше
+MARK_DEW = (255, 255, 255)     # холоднее точки росы: конденсат и плесень
+
 
 # Строки таблицы: ключ норматива -> (название, единица, запросы min/среднее/max).
 # {w} заменяется окном замера, например [190s].
@@ -56,7 +64,14 @@ class VictoriaError(Exception):
 
 
 class Reports:
-    def __init__(self, cfg: dict):
+    def __init__(self, cfg: dict, snapshots=None):
+        # SnapshotStore со снимками тепловизора по замерам (None, если снимки выключены).
+        self.snapshots = snapshots
+        self.heat_delta = cfg["heat_loss"]["delta_celsius"]
+        self.min_zone = cfg["heat_loss"]["min_zone_pixels"]
+        # Пороги поиска теплопотерь по замерам: id -> (время расчёта, пороги). Нужен для картинок
+        # /reports/<id>/marked/..., чтобы не спрашивать VictoriaMetrics на каждый снимок.
+        self._thresholds_cache = {}
         self.vm_url = cfg["victoria_url"].rstrip("/")
         self.lookback = cfg["lookback_days"] * 86400
         # Норматив может быть строкой (только текст) или словарём с text и границами cold/warm.
@@ -157,6 +172,178 @@ class Reports:
             return "ok" if inside(limits["optimal"]) else "warn"
         return "ok"
 
+    # --- поиск теплопотерь ---
+
+    def thresholds(self, session: dict, rows=None) -> dict:
+        """Пороги для замера: температура воздуха, порог «холодно», точка росы.
+
+        Воздух — среднее за замер по комнатным датчикам температуры (DHT11), влажность — по
+        комнатным датчикам влажности. Без них опорной считается медиана каждого кадра.
+        """
+        rows = rows if rows is not None else self.stats(session)
+        # Строка stats(): (ключ, название, единица, датчик, min, среднее, max).
+        temps = [r[5] for r in rows if r[0] == "temperature_celsius"]
+        hums = [r[5] for r in rows if r[0] == "humidity_percent"]
+        air = sum(temps) / len(temps) if temps else None
+        rh = sum(hums) / len(hums) if hums else None
+        return {
+            "air": air,
+            "rh": rh,
+            "cold": None if air is None else air - self.heat_delta,
+            "dew": dew_point(air, rh) if air is not None and rh else None,
+        }
+
+    def _cached_thresholds(self, sid: str):
+        hit = self._thresholds_cache.get(sid)
+        if hit and time.time() - hit[0] < 60:
+            return hit[1]
+        session = self.session(sid)
+        if session is None:
+            return None
+        value = self.thresholds(session)
+        self._thresholds_cache[sid] = (time.time(), value)
+        return value
+
+    def find_zones(self, frame: dict, th: dict) -> list:
+        """Холодные зоны кадра: связные области пикселей холоднее порога (4-соседство).
+
+        Возвращает [{"pixels": [(r, c)], "min": °C, "dew": bool, "where": "слева внизу"}],
+        самые холодные первыми.
+        """
+        pixels = frame["pixels"]
+        rows, cols = len(pixels), len(pixels[0])
+        cold = th["cold"]
+        if cold is None:
+            # Нет датчика воздуха: сравниваем с медианой кадра.
+            valid = sorted(v for row in pixels for v in row if v is not None)
+            cold = valid[len(valid) // 2] - self.heat_delta if valid else None
+        if cold is None:
+            return []
+        dew = th["dew"]
+        limit = max(cold, dew) if dew is not None else cold
+        hot = {(r, c) for r in range(rows) for c in range(cols)
+               if pixels[r][c] is not None and round(pixels[r][c], 1) <= round(limit, 1)}
+        zones, seen = [], set()
+        for start in sorted(hot):
+            if start in seen:
+                continue
+            stack, zone = [start], []
+            seen.add(start)
+            while stack:
+                r, c = stack.pop()
+                zone.append((r, c))
+                for nb in ((r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)):
+                    if nb in hot and nb not in seen:
+                        seen.add(nb)
+                        stack.append(nb)
+            if len(zone) < self.min_zone:
+                continue
+            tmin = min(pixels[r][c] for r, c in zone)
+            cr = sum(r for r, _ in zone) / len(zone)
+            cc = sum(c for _, c in zone) / len(zone)
+            zones.append({
+                "pixels": zone,
+                "min": tmin,
+                "dew": dew is not None and round(tmin, 1) <= round(dew, 1),
+                "where": _position(cr, cc, rows, cols),
+            })
+        return sorted(zones, key=lambda z: z["min"])
+
+    def marked_png(self, sid: str, name: str):
+        """Снимок с обведёнными холодными зонами или None."""
+        if self.snapshots is None or not ID_RE.match(sid) or not SNAPSHOT_RE.match(name):
+            return None
+        frame = self.snapshots.load(sid, name)
+        if frame is None:
+            return None
+        try:
+            th = self._cached_thresholds(sid)
+        except (VictoriaError, ValueError):
+            th = None
+        th = th or {"air": None, "rh": None, "cold": None, "dew": None}
+        from thermal_image import render_png
+        marks = {}
+        for zone in self.find_zones(frame, th):
+            for px in zone["pixels"]:
+                marks[px] = MARK_DEW if zone["dew"] else MARK_COLD
+        return render_png(frame, marks=marks)
+
+    def _heat_loss_html(self, sid: str, th: dict) -> str:
+        names = self.snapshots.snapshots(sid) if self.snapshots else []
+        if not names:
+            return ("<h2>Поиск теплопотерь</h2><p>Снимков тепловизора за этот замер нет (тепловизор не "
+                    "подключён или снимки этого замера уже удалены ротацией).</p>")
+        found = []
+        for name in names:
+            frame = self.snapshots.load(sid, name)
+            if frame is None:
+                continue
+            zones = self.find_zones(frame, th)
+            if zones:
+                found.append((zones[0]["min"], name, frame, zones))
+        found.sort(key=lambda x: x[0])
+
+        if th["air"] is not None:
+            ref = (f"Воздух в комнате в среднем {_num(th['air'])} °C. Холодная зона — поверхность "
+                   f"{_num(th['cold'])} °C и холоднее (на {_num(self.heat_delta)} °C и больше ниже "
+                   "воздуха: норматив перепада для наружных стен жилых зданий, СП 50.13330.2012, табл. 5)")
+            if th["dew"] is not None:
+                ref += (f"; точка росы {_num(th['dew'])} °C при влажности {_num(th['rh'])} % — поверхность "
+                        "холоднее неё отпотевает и плесневеет")
+            ref += "."
+        else:
+            ref = (f"Датчика воздуха нет: холодная зона — на {_num(self.heat_delta)} °C холоднее медианы кадра.")
+        legend = ("<p><span class=\"legend cold\">голубой контур</span> — холодная зона, "
+                  "<span class=\"legend dew\">белый контур</span> — ниже точки росы.</p>")
+
+        if not found:
+            body = f"<p>{ref}</p><p>На {len(names)} снимках холодных зон не найдено.</p>"
+        else:
+            items = []
+            for _tmin, name, frame, zones in found[:12]:
+                angle = frame.get("servo_angle")
+                desc = "".join(
+                    f"<li>{html.escape(z['where'])}: до {_num(z['min'])} °C"
+                    + (f", на {_num(th['air'] - z['min'])} °C холоднее воздуха" if th["air"] is not None else "")
+                    + f", {len(z['pixels'])} пикс."
+                    + (" — <b>ниже точки росы</b>" if z["dew"] else "") + "</li>"
+                    for z in zones[:4]
+                )
+                url = f"/reports/{sid}/marked/{name}"
+                items.append(
+                    f"<tr><td><a href=\"{url}\"><img class=\"marked\" src=\"{url}\" alt=\"{name}\"></a></td>"
+                    f"<td>{_fmt_time(frame['timestamp'])}"
+                    + (f"<br>серва {_num(angle)}°" if angle is not None else "")
+                    + f"</td><td><ul>{desc}</ul></td></tr>"
+                )
+            more = f"<p class=\"note\">Показаны 12 самых холодных из {len(found)}.</p>" if len(found) > 12 else ""
+            body = (f"<p>{ref}</p>{legend}<p>Холодные зоны на {len(found)} из {len(names)} снимков. "
+                    f"Самая холодная точка: {_num(found[0][0])} °C.</p>"
+                    "<table><tr><th>Снимок</th><th>Время</th><th>Холодные зоны (где в кадре)</th></tr>"
+                    f"{''.join(items)}</table>{more}")
+        body += (
+            "<p class=\"note\">Перепад 4 °C по СП 50.13330 задан для расчётной наружной температуры "
+            "(самая холодная пятидневка): в мягкую погоду реальный перепад меньше, поэтому зона, найденная "
+            "при небольшом морозе, при сильном будет ещё холоднее. Стекло, металл и глянцевые поверхности "
+            "отражают тепло других предметов, их температура на снимке неверна. Какая сторона кадра верх, "
+            "зависит от того, как закреплён тепловизор.</p>"
+        )
+        return "<h2>Поиск теплопотерь</h2>" + body
+
+    def _gallery_html(self, sid: str) -> str:
+        names = self.snapshots.snapshots(sid) if self.snapshots else []
+        if not names:
+            return ""
+        cells = "".join(
+            f"<figure><a href=\"/snapshots/{sid}/{n}\"><img class=\"thumb\" src=\"/snapshots/{sid}/{n}\" alt=\"{n}\"></a>"
+            f"<figcaption>{n[len('thermal_') + 9:len('thermal_') + 11]}:{n[len('thermal_') + 11:len('thermal_') + 13]}:"
+            f"{n[len('thermal_') + 13:len('thermal_') + 15]}</figcaption></figure>"
+            for n in names
+        )
+        return (f"<h2>Все снимки замера ({len(names)})</h2><div class=\"gallery\">{cells}</div>"
+                "<p class=\"note\">Снимок раз в 5 с. Цвета: тёмно-фиолетовый — самый холодный пиксель кадра, "
+                "светло-жёлтый — самый горячий; шкала своя у каждого снимка.</p>")
+
     # --- HTML ---
 
     def render_index(self, current_id) -> bytes:
@@ -178,7 +365,7 @@ class Reports:
             body = f"<table><tr><th>Начало</th><th>Длительность</th><th>Статус</th></tr>{items}</table>"
         return _page("Замеры", f"<h1>Замеры</h1>{body}")
 
-    def render_report(self, sid: str, current_id, snapshots_between, request_host: str):
+    def render_report(self, sid: str, current_id, request_host: str):
         """HTML страницы замера или None, если такого замера нет."""
         try:
             session = self.session(sid)
@@ -191,7 +378,7 @@ class Reports:
         running = sid == current_id
         end = time.time() if running else session["end"]
         season, season_how = self.season_of(session["start"])
-        snapshots = snapshots_between(session["start"], end + 10)
+        th = self.thresholds(session, rows)
         def cell(key, value):
             grade = self.grade(key, season, value)
             cls = f"num {grade}" if grade else "num"
@@ -213,10 +400,6 @@ class Reports:
         # Запас 10 с по краям, чтобы на графиках были видны крайние точки замера.
         dashboard = (f"{grafana.rstrip('/')}/d/spa-sensors/?from={int(session['start'] * 1000) - 10_000}"
                      f"&to={int(end * 1000) + 10_000}")
-        snaps = "".join(
-            f"<a href=\"/snapshots/{html.escape(n)}\"><img src=\"/snapshots/{html.escape(n)}\" alt=\"{html.escape(n)}\"></a>"
-            for n in snapshots
-        )
         body = (
             "<p><a href=\"/reports\">← все замеры</a></p>"
             f"<h1>Замер {_fmt_time(session['start'])}</h1>"
@@ -233,9 +416,8 @@ class Reports:
             "с точностью до 10 с. Нормативы для жилой комнаты по СанПиН 1.2.3685-21; микроклимат "
             "нормируется в обслуживаемой зоне (0,1–2,0 м от пола, не ближе 0,5 м от стен, окон и "
             "отопления). Результаты бытовых датчиков не заменяют замеров аккредитованной лаборатории.</p>"
-            + (f"<h2>Снимки тепловизора</h2>{snaps}"
-               "<p class=\"note\">Цвета: тёмно-фиолетовый — самый холодный пиксель кадра, "
-               "светло-жёлтый — самый горячий; шкала своя у каждого снимка.</p>" if snaps else "")
+            + self._heat_loss_html(sid, th)
+            + self._gallery_html(sid)
         )
         return _page(f"Замер {sid}", body)
 
@@ -261,6 +443,10 @@ td.ok,.legend.ok{background:#173d2a !important;color:#8fe3ae}
 td.warn,.legend.warn{background:#4a3d12 !important;color:#ffd166}
 td.bad,.legend.bad{background:#5a1d22 !important;color:#ff8a8a;font-weight:600}
 .legend{padding:.1em .5em;border-radius:3px;white-space:nowrap}
+.legend.cold{border:2px solid rgb(0,229,255)} .legend.dew{border:2px solid #fff}
+img.marked{width:240px} td ul{margin:0;padding-left:1.2em}
+.gallery{display:flex;flex-wrap:wrap;gap:.4em} figure{margin:0;text-align:center;font-size:.8em;color:#8b93a1}
+img.thumb{width:160px;margin:0}
 .note{color:#8b93a1;font-size:.9em} img{image-rendering:pixelated;margin:.3em;border:1px solid #343a46}
 """
 
@@ -291,9 +477,16 @@ def session_id(ts: float) -> str:
     return datetime.fromtimestamp(ts).strftime("%Y%m%d_%H%M%S")
 
 
-def snapshot_time(name: str):
-    """Время снимка из имени thermal_ГГГГММДД_ЧЧММСС.png (или None)."""
-    try:
-        return datetime.strptime(name[len("thermal_"):-len(".png")], "%Y%m%d_%H%M%S").timestamp()
-    except ValueError:
-        return None
+def dew_point(t: float, rh: float) -> float:
+    """Точка росы, °C, по формуле Магнуса (коэффициенты 17,62 и 243,12 °C)."""
+    gamma = math.log(rh / 100) + 17.62 * t / (243.12 + t)
+    return 243.12 * gamma / (17.62 - gamma)
+
+
+def _position(r: float, c: float, rows: int, cols: int) -> str:
+    """Где в кадре центр зоны: «слева вверху», «в центре» и т.п. (3 x 3 части)."""
+    v = ("вверху", "посередине", "внизу")[min(2, int(r * 3 / rows))]
+    h = ("слева", "по центру", "справа")[min(2, int(c * 3 / cols))]
+    if (h, v) == ("по центру", "посередине"):
+        return "в центре кадра"
+    return f"{h} {v}"
