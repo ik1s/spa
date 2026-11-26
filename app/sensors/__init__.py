@@ -1,6 +1,7 @@
 from .base import Sensor, SensorError
 from .bh1750 import BH1750Sensor
 from .dht11 import DHT11Sensor
+from .mlx90640 import MLX90640Sensor
 
 # Реестр датчиков: значение поля "type" из config.yaml -> класс датчика.
 # Так main.py создаёт нужный датчик по имени типа и ничего не знает о конкретных
@@ -8,6 +9,7 @@ from .dht11 import DHT11Sensor
 SENSOR_TYPES = {
     "dht11": DHT11Sensor,
     "bh1750": BH1750Sensor,
+    "mlx90640": MLX90640Sensor,
 }
 
 

@@ -45,6 +45,22 @@
   become_user: spa
   notify: restart spa-monitoring
 
+# Драйвер тепловизора MLX90640 от Adafruit. Ставится с --no-deps: по зависимостям
+# pip притащил бы Adafruit-Blinka (pyftdi, binho и т.п.), а она не нужна — шину даёт
+# своя обёртка над smbus2 (app/sensors/mlx90640.py). Во время работы драйверу нужен
+# только adafruit_bus_device. Версии закреплены: обновлять осознанно, проверив кадр.
+- name: Install MLX90640 driver without dependencies
+  ansible.builtin.pip:
+    name:
+      - adafruit-circuitpython-mlx90640==1.3.9
+      - adafruit-circuitpython-busdevice==5.2.17
+    extra_args: --no-deps
+    virtualenv: /opt/spa/app/venv
+    virtualenv_command: "/usr/bin/python3 -m venv --system-site-packages"
+  become: true
+  become_user: spa
+  notify: restart spa-monitoring
+
 - name: Deploy spa-monitoring systemd unit
   ansible.builtin.copy:
     src: spa-monitoring.service

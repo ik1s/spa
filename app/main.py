@@ -1,9 +1,11 @@
 """Точка входа: HTTP-сервер и фоновый опрос датчиков.
 
 Приложение работает в двух потоках одновременно:
-- главный поток обслуживает HTTP-запросы (/metrics, /health, /reports);
+- главный поток обслуживает HTTP-запросы (/metrics, /health, /collection, /servo, /thermal, /reports);
 - отдельный поток (Collector) раз в несколько секунд опрашивает датчики и
-  обновляет метрики.
+  обновляет метрики. Опрос идёт всегда (collection.always_on: true) или только во
+  время замера: замер на collection.duration_seconds запускает кнопка или
+  POST /collection/start.
 Так медленное чтение датчика не задерживает ответы на запросы.
 """
 import json
@@ -21,6 +23,7 @@ from sensors import create_sensor
 from button import Button, ButtonError
 from servo import Servo, ServoBusy, ServoError
 from sensors.base import SensorError
+from thermal_image import PngCache, SnapshotStore
 
 log = logging.getLogger("spa")
 
@@ -41,13 +44,27 @@ class Collector:
     def __init__(self, cfg: dict):
         self.cfg = cfg
         self.sensors = [create_sensor(s) for s in cfg["sensors"]]
-        self.health = HealthState([s.name for s in self.sensors], cfg["collection"]["always_on"])
-        self.collection_enabled = cfg["collection"]["always_on"]
+        self.always_on = cfg["collection"]["always_on"]
+        # Длительность замера, который запускает кнопка или POST /collection/start.
+        self.duration = cfg["collection"]["duration_seconds"]
+        self.health = HealthState([s.name for s in self.sensors], self.always_on)
+        # Время окончания текущего замера (по time.monotonic()) или None, если замера нет.
+        # Его меняют поток кнопки и HTTP-потоки, а читает поток опроса, поэтому под замком.
+        self._lock = threading.Lock()
+        self._session_until = None
+        # Был ли сбор включён на прошлом шаге цикла: по смене состояния пишем лог и метрики.
+        self._was_active = None
+        # Снимки тепловизора: первый удачный кадр после каждого запуска замера сохраняется в папку.
+        snap = cfg["thermal_snapshots"]
+        self.snapshots = SnapshotStore(snap["dir"], snap["keep"]) if snap["enabled"] else None
+        self._snapshot_pending = False
         # Сколько опросов подряд датчик отвечает ошибкой и когда его переподключали в последний раз.
         self._failures = {s.name: 0 for s in self.sensors}
         self._last_reconnect = {s.name: 0.0 for s in self.sensors}
         # Event это флаг "пора остановиться", безопасный для нескольких потоков.
         self._stop = threading.Event()
+        # Будит поток опроса раньше конца паузы: замер стартует сразу после нажатия.
+        self._wake = threading.Event()
         # daemon=True: если главный поток завершился, этот поток не будет
         # удерживать процесс и умрёт вместе с ним.
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -57,19 +74,88 @@ class Collector:
 
     def stop(self):
         self._stop.set()
+        self._wake.set()
         # Ждём завершения потока не дольше 5 секунд, чтобы не зависнуть навсегда.
         self._thread.join(timeout=5)
 
+    def _remaining(self) -> float:
+        """Сколько секунд осталось до конца замера (0, если замера нет). Вызывать под замком."""
+        if self._session_until is None:
+            return 0.0
+        return max(0.0, self._session_until - time.monotonic())
+
+    def is_collecting(self) -> bool:
+        if self.always_on:
+            return True
+        with self._lock:
+            return self._remaining() > 0
+
+    def start_session(self) -> dict:
+        """Начать замер на duration секунд. Повторный вызов во время замера отсчитывает время заново."""
+        with self._lock:
+            restarted = self._remaining() > 0
+            self._session_until = time.monotonic() + self.duration
+            self._snapshot_pending = True
+        log.info("measurement %s for %g s", "restarted" if restarted else "started", self.duration)
+        self._wake.set()
+        return self.collection_status()
+
+    def stop_session(self) -> dict:
+        with self._lock:
+            was_running = self._remaining() > 0
+            self._session_until = None
+        if was_running:
+            log.info("measurement stopped by request")
+        self._wake.set()
+        return self.collection_status()
+
+    def collection_status(self) -> dict:
+        with self._lock:
+            remaining = self._remaining()
+        return {
+            "always_on": self.always_on,
+            "collecting": self.always_on or remaining > 0,
+            "remaining_seconds": round(remaining, 1),
+            "duration_seconds": self.duration,
+        }
+
+    def _apply_state(self, active: bool):
+        """Обновить метрики, /health и лог при включении и выключении сбора."""
+        with self._lock:
+            remaining = self._remaining()
+        metrics.collection_remaining_seconds.set(round(remaining, 1))
+        if active == self._was_active:
+            return
+        metrics.collection_enabled.set(1 if active else 0)
+        self.health.set_collection_enabled(active)
+        if self._was_active and not active:
+            # Замер закончился: убираем показания из /metrics, чтобы в Grafana был
+            # разрыв до следующего замера, а не линия из последних значений.
+            for sensor in self.sensors:
+                metrics.clear_readings(sensor.name)
+            log.info("measurement finished")
+        self._was_active = active
+
     def _run(self):
         interval = self.cfg["polling"]["interval_seconds"]
-        metrics.collection_enabled.set(1 if self.collection_enabled else 0)
         while not self._stop.is_set():
-            if self.collection_enabled:
+            self._wake.clear()
+            active = self.is_collecting()
+            self._apply_state(active)
+            if active:
                 for sensor in self.sensors:
+                    if self._stop.is_set():
+                        break
                     self._poll_one(sensor)
-            # wait() работает как sleep(interval), но просыпается сразу, как
-            # только вызван stop(). Обычный sleep заставил бы ждать до конца паузы.
-            self._stop.wait(interval)
+            # Ждём до следующего опроса, но не дольше конца замера, чтобы он закончился
+            # вовремя. wait() просыпается сразу при stop() или нажатии кнопки.
+            timeout = interval
+            if not self.always_on:
+                with self._lock:
+                    remaining = self._remaining()
+                if remaining > 0:
+                    timeout = min(interval, remaining)
+            self._wake.wait(timeout)
 
     def _read_with_retries(self, sensor):
         """Прочитать датчик, при сбое повторить чтение (одиночные сбои DHT11 обычное дело)."""
@@ -126,9 +212,16 @@ class Collector:
             if key in values:
                 gauge.labels(sensor=sensor.name).set(values[key])
         self.health.record_success(sensor.name, values)
+        if self._snapshot_pending and self.snapshots is not None and hasattr(sensor, "last_frame"):
+            self._snapshot_pending = False
+            path = self.snapshots.save(sensor.last_frame())
+            if path is not None:
+                log.info("thermal snapshot saved: %s", path)
 
 
 def make_handler(collector: Collector, servo=None):
+    png_cache = PngCache()
+
     # Класс обработчика объявлен внутри функции, чтобы его методы видели
     # переменную collector: сервер сам создаёт обработчик на каждый запрос и
     # передать ему свои данные другим способом неудобно.
@@ -146,6 +239,16 @@ def make_handler(collector: Collector, servo=None):
             self.wfile.write(body)
 
         def do_POST(self):
+            self.path = self.path.split("?", 1)[0]
+            if self.path in ("/collection/start", "/collection/stop"):
+                if collector.always_on:
+                    # Сбор и так идёт всегда: запускать и останавливать нечего.
+                    self._send_json(409, {"status": "always_on", **collector.collection_status()})
+                elif self.path == "/collection/start":
+                    self._send_json(200, collector.start_session())
+                else:
+                    self._send_json(200, collector.stop_session())
+                return
             if self.path not in ("/servo", "/servo/sweep"):
                 self._send_json(404, {"status": "not_found"})
                 return
@@ -176,6 +279,8 @@ def make_handler(collector: Collector, servo=None):
                 self._send_json(200, servo.status())
 
         def do_GET(self):
+            # Параметры запроса (например ?t=... от Grafana против кэша браузера) не важны.
+            self.path = self.path.split("?", 1)[0]
             if self.path == "/metrics":
                 body = metrics.render()
                 self.send_response(200)
@@ -186,6 +291,26 @@ def make_handler(collector: Collector, servo=None):
                 self.wfile.write(body)
             elif self.path == "/health":
                 self._send_json(200, collector.health.to_dict())
+            elif self.path in ("/thermal", "/thermal.png"):
+                # Последний кадр тепловизора (сохраняется и после конца замера, смотрите timestamp).
+                frames = [s.last_frame() for s in collector.sensors if hasattr(s, "last_frame")]
+                if not frames:
+                    self._send_json(404, {"status": "no_thermal_sensor"})
+                elif frames[0] is None:
+                    self._send_json(503, {"status": "no_frame_yet"})
+                elif self.path == "/thermal":
+                    self._send_json(200, frames[0])
+                else:
+                    body = png_cache.get(frames[0])
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/png")
+                    self.send_header("Content-Length", str(len(body)))
+                    # Картинка меняется с каждым кадром: браузер не должен показывать старую из кэша.
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    self.wfile.write(body)
+            elif self.path == "/collection":
+                self._send_json(200, collector.collection_status())
             elif self.path == "/servo":
                 if servo is None:
                     self._send_json(503, {"status": "servo_disabled"})
@@ -217,17 +342,25 @@ def main():
         servo = Servo(cfg["servo"])
         servo.on_move = metrics.servo_angle_degrees.set
 
+    def on_button_press():
+        # Кнопка запускает замер; если подключена серва, она заодно делает проход.
+        collector.start_session()
+        if servo is not None:
+            try:
+                servo.sweep()
+            except ServoBusy:
+                log.info("servo sweep already running")
+
     button = None
     if cfg["button"]["enabled"]:
-        if servo is None:
-            log.warning("button is enabled but servo is disabled: button ignored")
-        else:
-            button = Button(cfg["button"], servo.sweep)
-            try:
-                button.start()
-            except ButtonError as exc:
-                log.warning("button disabled: %s", exc)
-                button = None
+        if collector.always_on:
+            log.warning("button is enabled but collection.always_on is true: press only starts a servo sweep")
+        button = Button(cfg["button"], on_button_press)
+        try:
+            button.start()
+        except ButtonError as exc:
+            log.warning("button disabled: %s", exc)
+            button = None
 
     # ThreadingHTTPServer обрабатывает каждый запрос в отдельном потоке.
     server = ThreadingHTTPServer(

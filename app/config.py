@@ -24,9 +24,17 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> dict:
     # Эта настройка сейчас нигде не используется, оставлена на будущее.
     cfg["polling"].setdefault("metrics_update_seconds", cfg["polling"]["interval_seconds"])
     cfg.setdefault("collection", {}).setdefault("always_on", True)
+    # Длительность замера, который запускает кнопка (или POST /collection/start).
+    cfg["collection"].setdefault("duration_seconds", 180)
+    if not cfg["collection"]["duration_seconds"] > 0:
+        raise ValueError("collection.duration_seconds must be positive")
     # Сервопривод по умолчанию выключен: включать, когда он физически подключён.
     cfg.setdefault("servo", {}).setdefault("enabled", False)
     cfg.setdefault("button", {}).setdefault("enabled", False)
+    snap = cfg.setdefault("thermal_snapshots", {})
+    snap.setdefault("enabled", True)
+    snap.setdefault("dir", "/opt/spa/data/thermal")
+    snap.setdefault("keep", 100)
     cfg.setdefault("sensors", [])
     cfg.setdefault("logging", {}).setdefault("level", "INFO")
     return cfg

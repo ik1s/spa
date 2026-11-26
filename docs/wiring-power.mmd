@@ -1,40 +1,83 @@
-flowchart LR
-  subgraph PI["Плата Prototyping Rev 1.2"]
-    V3["3V"]
-    GND["GND"]
+flowchart TB
+  subgraph ROW1[" "]
+    direction LR
+  subgraph RAILS["1. Сначала собрать рейки (макетка или Wago)"]
+    direction LR
+    T3["Клемма 3V платы<br/>(блок 5V / GND / 3V,<br/>левый верхний угол)"] --> R3["Рейка 3V"]
+    TG["Клемма GND платы<br/>(тот же блок)"] --> RG["Рейка GND"]
+    PSUM["Минус блока 5 В сервы"] -->|"общая земля"| RG
   end
 
-  RAIL3["Рейка 3V<br/>(макетка или Wago)"]
-  RAILG["Рейка GND<br/>(макетка или Wago)"]
-  PSU["Блок питания 5 В, 1-2 А<br/>(отдельный, для серы)"]
+  subgraph BH["2. BH1750 (GY-302)"]
+    direction LR
+    bh3["Рейка 3V"] --> bhV["VCC"]
+    bhG0["Рейка GND"] --> bhG["GND"]
+    bhC0["Клемма SCL"] --> bhC["SCL"]
+    bhD0["Клемма SDA"] --> bhD["SDA"]
+    bhA0["не подключать"] -.- bhA["ADDR"]
+  end
 
-  DHT["DHT11"]
-  BH["BH1750"]
-  MIC["SPH0645<br/>только 3V, не 5V"]
-  THERM["Тепловизор<br/>(если UART 3,3 В)"]
-  SERVO["Серва SG90"]
-  CAP["Конденсатор 470-1000 мкФ<br/>10 В, у серы, полярность"]
-  BTN["Кнопка"]
+  subgraph DHT["3. DHT11"]
+    direction LR
+    dh3["Рейка 3V"] --> dhV["средний вывод"]
+    dhG0["Рейка GND"] --> dhG["-"]
+    dhS0["Клемма GCLK"] --> dhS["S"]
+  end
 
-  V3 --> RAIL3
-  GND --> RAILG
-  RAIL3 --> DHT
-  RAIL3 --> BH
-  RAIL3 --> MIC
-  RAIL3 -.-> THERM
-  RAILG --> DHT
-  RAILG --> BH
-  RAILG --> MIC
-  RAILG -->|"SEL"| MIC
-  RAILG --> THERM
-  RAILG --> BTN
+  end
+  subgraph ROW2[" "]
+    direction LR
+  subgraph MIC["4. SPH0645 (только 3V)"]
+    direction LR
+    mi3["Рейка 3V"] --> miV["3V"]
+    miG0["Рейка GND"] --> miG["GND"]
+    miL0["Рейка GND"] --> miL["SEL"]
+    miB0["Клемма IO18"] --> miB["BCLK"]
+    miR0["Клемма IO19"] --> miR["LRCL"]
+    miO0["Клемма IO20"] --> miO["DOUT"]
+  end
 
-  PSU -->|"+5 В, красный"| SERVO
-  PSU -->|"минус, коричневый"| SERVO
-  PSU -. "минус блока = GND Pi<br/>(общая земля)" .- RAILG
-  CAP -.- SERVO
+  subgraph BTN["5. Кнопка KY-004"]
+    direction LR
+    btS0["Клемма IO23"] --> btS["S"]
+    btG0["Рейка GND"] --> btG["-"]
+    btV0["не подключать"] -.- btV["средний вывод"]
+  end
 
-  classDef warn fill:#ffe0e0,stroke:#c00,color:#000
-  classDef later fill:#eee,stroke:#999,stroke-dasharray: 4 3,color:#000
-  class MIC,SERVO warn
-  class THERM later
+  subgraph SERVO["6. Серва SG90 (питание НЕ от Pi)"]
+    direction LR
+    sp["Плюс блока 5 В"] --> sR["красный"]
+    sm["Минус блока 5 В"] --> sB["коричневый"]
+    sS0["Клемма IO12"] --> sS["оранжевый"]
+    sC["Конденсатор 470-1000 мкФ 10 В:<br/>плюс к красному, минус к коричневому"]
+  end
+
+  subgraph TH["7. Тепловизор MLX90640 (только 3V)"]
+    direction LR
+    th3["Рейка 3V"] --> thV["VDD: дальняя от ключа, справа"]
+    thG0["Рейка GND"] --> thG["GND: дальняя от ключа, слева<br/>(звонится с корпусом)"]
+    thD0["Клемма SDA"] --> thD["SDA: у ключа, справа"]
+    thC0["Клемма SCL"] --> thC["SCL: у ключа, слева"]
+    thK["Конденсаторы 10 мкФ и 100 нФ<br/>между VDD и GND у датчика"]
+  end
+
+  end
+  RAILS ~~~ BH ~~~ DHT
+  MIC ~~~ BTN ~~~ SERVO ~~~ TH
+  ROW1 ~~~ ROW2
+  style ROW1 fill:none,stroke:none
+  style ROW2 fill:none,stroke:none
+
+  classDef v3 fill:#ffd6d6,stroke:#c00,color:#000
+  classDef gnd fill:#d9d9d9,stroke:#333,color:#000
+  classDef sig fill:#d6e6ff,stroke:#2457b3,color:#000
+  classDef v5 fill:#ffe5c2,stroke:#d97a00,color:#000
+  classDef nc fill:#fff,stroke:#999,stroke-dasharray: 4 3,color:#666
+  classDef pin fill:#fff,stroke:#333,color:#000
+
+  class T3,R3,bh3,dh3,mi3,th3 v3
+  class TG,RG,bhG0,dhG0,miG0,miL0,btG0,thG0 gnd
+  class bhC0,bhD0,dhS0,miB0,miR0,miO0,btS0,sS0,thD0,thC0 sig
+  class PSUM,sp,sm,sC v5
+  class bhA0,btV0 nc
+  class bhV,bhG,bhC,bhD,bhA,dhV,dhG,dhS,miV,miG,miL,miB,miR,miO,btS,btG,btV,sR,sB,sS,thV,thG,thD,thC,thK pin

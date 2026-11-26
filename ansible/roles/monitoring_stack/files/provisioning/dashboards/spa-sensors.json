@@ -30,7 +30,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
       "id": 1,
       "options": {
         "colorMode": "value",
@@ -63,7 +63,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
       "id": 2,
       "options": {
         "colorMode": "value",
@@ -90,12 +90,45 @@
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "yellow", "value": null }] },
+          "unit": "lux"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "id": 11,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+          "expr": "spa_illuminance_lux",
+          "legendFormat": "{{sensor}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Освещённость",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
           "mappings": [
             {
               "type": "value",
               "options": {
-                "0": { "text": "ВЫКЛ", "color": "red", "index": 0 },
-                "1": { "text": "ВКЛ", "color": "green", "index": 1 }
+                "0": { "text": "НЕТ", "color": "red", "index": 0 },
+                "1": { "text": "ИДЁТ", "color": "green", "index": 1 }
               }
             }
           ],
@@ -104,7 +137,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
       "id": 3,
       "options": {
         "colorMode": "background",
@@ -123,7 +156,41 @@
           "refId": "A"
         }
       ],
-      "title": "Сбор данных включён",
+      "title": "Замер идёт",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+      "description": "Замер запускается кнопкой и идёт collection.duration_seconds (по умолчанию 3 минуты)",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "text", "value": null }, { "color": "green", "value": 0.5 }] },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "id": 12,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+          "expr": "spa_collection_remaining_seconds",
+          "legendFormat": "осталось",
+          "refId": "A"
+        }
+      ],
+      "title": "До конца замера",
       "type": "stat"
     },
     {
@@ -145,7 +212,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
       "id": 4,
       "options": {
         "colorMode": "background",
@@ -164,7 +231,7 @@
           "refId": "A"
         }
       ],
-      "title": "Датчик в сети",
+      "title": "Датчики в сети",
       "type": "stat"
     },
     {
@@ -285,8 +352,50 @@
       "type": "timeseries"
     },
     {
+      "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+      "description": "Самый холодный и самый горячий пиксель кадра MLX90640 (32x24) и среднее по кадру. Кадр целиком: GET /thermal на порту 7777",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 0, "showPoints": "never", "spanNulls": false },
+          "unit": "celsius"
+        },
+        "overrides": [
+          { "matcher": { "id": "byFrameRefID", "options": "A" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }] },
+          { "matcher": { "id": "byFrameRefID", "options": "B" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
+          { "matcher": { "id": "byFrameRefID", "options": "C" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 13, "x": 0, "y": 20 },
+      "id": 13,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" }, "expr": "spa_thermal_min_celsius", "legendFormat": "min {{sensor}}", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" }, "expr": "spa_thermal_mean_celsius", "legendFormat": "среднее {{sensor}}", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" }, "expr": "spa_thermal_max_celsius", "legendFormat": "max {{sensor}}", "refId": "C" }
+      ],
+      "title": "Тепловизор: min / среднее / max",
+      "type": "timeseries"
+    },
+    {
+      "description": "Последний кадр MLX90640 (32x24) с http://${spa_host}:7777/thermal.png. Шкала своя у каждого кадра: тёмно-фиолетовый это самый холодный пиксель, светло-жёлтый самый горячий; значения смотрите на соседней панели. Картинку грузит браузер напрямую с хоста, поэтому порт 7777 должен быть доступен с вашего компьютера.",
+      "gridPos": { "h": 9, "w": 11, "x": 13, "y": 20 },
+      "id": 14,
+      "options": {
+        "mode": "html",
+        "content": "<div style=\"display:flex;justify-content:center;align-items:center;height:100%\"><img src=\"http://${spa_host}:7777/thermal.png?t=${__to}\" alt=\"нет кадра: нажмите кнопку замера\" style=\"height:100%;max-width:100%;object-fit:contain;image-rendering:pixelated\"></div>"
+      },
+      "pluginVersion": "11.0.0",
+      "title": "Тепловая карта (последний кадр)",
+      "type": "text"
+    },
+    {
       "collapsed": true,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 20 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
       "id": 10,
       "panels": [
         {
@@ -402,13 +511,22 @@
   "schemaVersion": 39,
   "tags": ["spa"],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "spa_host",
+        "label": "Хост приложения spa",
+        "description": "Адрес Raspberry Pi, с которого браузер берёт картинку тепловизора (порт 7777)",
+        "type": "constant",
+        "query": "192.168.1.3",
+        "hide": 2
+      }
+    ]
   },
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "",
   "title": "SPA — Датчики",
   "uid": "spa-sensors",
-  "version": 3,
+  "version": 6,
   "weekStart": ""
 }

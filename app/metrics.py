@@ -23,6 +23,15 @@ humidity_percent = Gauge(
 illuminance_lux = Gauge(
     "spa_illuminance_lux", "Illuminance reading, lux", ["sensor"], registry=registry
 )
+thermal_min_celsius = Gauge(
+    "spa_thermal_min_celsius", "Coldest pixel of the thermal camera frame", ["sensor"], registry=registry
+)
+thermal_max_celsius = Gauge(
+    "spa_thermal_max_celsius", "Hottest pixel of the thermal camera frame", ["sensor"], registry=registry
+)
+thermal_mean_celsius = Gauge(
+    "spa_thermal_mean_celsius", "Mean temperature over the thermal camera frame", ["sensor"], registry=registry
+)
 servo_angle_degrees = Gauge(
     "spa_servo_angle_degrees", "Current servo angle in degrees (absent until the first command)", registry=registry
 )
@@ -45,12 +54,22 @@ collection_enabled = Gauge(
 )
 
 
+collection_remaining_seconds = Gauge(
+    "spa_collection_remaining_seconds",
+    "Seconds left in the current measurement started by the button (0 when idle or always_on)",
+    registry=registry,
+)
+
+
 # Ключ в словаре, который возвращает Sensor.read(), -> метрика для него.
 # Новый вид измерения достаточно добавить сюда и описать Gauge выше.
 READINGS = {
     "temperature_celsius": temperature_celsius,
     "humidity_percent": humidity_percent,
     "illuminance_lux": illuminance_lux,
+    "thermal_min_celsius": thermal_min_celsius,
+    "thermal_max_celsius": thermal_max_celsius,
+    "thermal_mean_celsius": thermal_mean_celsius,
 }
 
 
